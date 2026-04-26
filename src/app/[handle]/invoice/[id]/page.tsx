@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PageFrame } from "@/components/hush/page-frame";
+import { PageFrame } from "@/components/payments/page-frame";
 import { ProfileCard } from "../../_components/profile-card";
-import { getMockInvoice } from "@/lib/hush/mock-profiles";
+import { getMockInvoice } from "@/lib/payments/mock-profiles";
 import { useQuery } from "@tanstack/react-query";
 import { getHandle } from "@/app/actions/handles";
 
@@ -43,6 +43,7 @@ export default async function HandleInvoicePage({
       <ProfileCard
         handle={profile.handle}
         displayName={profile.displayName}
+        ownerPubkey={profile.ownerPubkey}
         bio={profile.bio}
         variant={variant}
         // subPath={`invoice/${invoice.id}`}

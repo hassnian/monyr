@@ -103,9 +103,9 @@ export function ConnectWalletsClient({
         />
       ))}
 
-      <p className="mt-4 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
-        <Lock className="size-3" />
-        Hush never holds your keys. One signature derives your privacy keys locally.
+      <p className="mt-4 flex items-center gap-1.5 font-serif italic text-[12.5px] leading-relaxed text-muted-foreground/80">
+        <Lock className="size-3 not-italic" />
+        Monyr never holds your keys. One signature derives your privacy keys locally.
       </p>
     </div>
   );

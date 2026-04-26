@@ -56,13 +56,7 @@ export default function UmbraRegister({ onComplete }: Props) {
   } = useQuery({
     enabled: Boolean(connectedWallet),
     queryKey: ["umbra-user-account", connectedWallet?.account.address],
-    queryFn: () =>
-      connectedWallet
-        ? getUserAccount({
-            account: connectedWallet.account,
-            wallet: connectedWallet.wallet,
-          })
-        : null,
+    queryFn: getUserAccount,
   });
 
   const persistedCompletedSteps = useMemo(
@@ -111,48 +105,42 @@ export default function UmbraRegister({ onComplete }: Props) {
     setActiveStep(null);
 
     try {
-      await registerAccount(
-        {
-          account: connectedWallet.account,
-          wallet: connectedWallet.wallet,
-        },
-        {
-          callbacks: {
-            userAccountInitialisation: {
-              pre: async () => {
-                setPhase("registering");
-                setActiveStep("userAccountInitialisation");
-              },
-              post: async (_, sig) => {
-                markStepDone("userAccountInitialisation");
-                setActiveStep("registerX25519PublicKey");
-                console.log(`Account created: ${sig}`);
-              },
+      await registerAccount({
+        callbacks: {
+          userAccountInitialisation: {
+            pre: async () => {
+              setPhase("registering");
+              setActiveStep("userAccountInitialisation");
             },
-            registerX25519PublicKey: {
-              pre: async () => {
-                setPhase("registering");
-                setActiveStep("registerX25519PublicKey");
-              },
-              post: async (_, sig) => {
-                markStepDone("registerX25519PublicKey");
-                setActiveStep("registerUserForAnonymousUsage");
-                console.log(`Encryption key registered: ${sig}`);
-              },
+            post: async (_, sig) => {
+              markStepDone("userAccountInitialisation");
+              setActiveStep("registerX25519PublicKey");
+              console.log(`Account created: ${sig}`);
             },
-            registerUserForAnonymousUsage: {
-              pre: async () => {
-                setPhase("registering");
-                setActiveStep("registerUserForAnonymousUsage");
-              },
-              post: async (_, sig) => {
-                markStepDone("registerUserForAnonymousUsage");
-                console.log(`Anonymous registration complete: ${sig}`);
-              },
+          },
+          registerX25519PublicKey: {
+            pre: async () => {
+              setPhase("registering");
+              setActiveStep("registerX25519PublicKey");
+            },
+            post: async (_, sig) => {
+              markStepDone("registerX25519PublicKey");
+              setActiveStep("registerUserForAnonymousUsage");
+              console.log(`Encryption key registered: ${sig}`);
+            },
+          },
+          registerUserForAnonymousUsage: {
+            pre: async () => {
+              setPhase("registering");
+              setActiveStep("registerUserForAnonymousUsage");
+            },
+            post: async (_, sig) => {
+              markStepDone("registerUserForAnonymousUsage");
+              console.log(`Anonymous registration complete: ${sig}`);
             },
           },
         },
-      );
+      });
 
       await refetchUserAccount();
       setActiveStep(null);

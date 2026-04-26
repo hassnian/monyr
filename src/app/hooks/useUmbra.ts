@@ -3,52 +3,92 @@ import {
   getUmbraClient,
   getUserAccountQuerierFunction,
   getUserRegistrationFunction,
+  getPublicBalanceToEncryptedBalanceDirectDepositorFunction
 } from "@umbra-privacy/sdk";
-import { IUmbraClient, IUmbraSigner, UserRegistrationCallbacks } from "@umbra-privacy/sdk/interfaces";
+import {
+  type IUmbraClient,
+  type IUmbraSigner,
+  type UserRegistrationCallbacks,
+} from "@umbra-privacy/sdk/interfaces";
 import {
   getCdnZkAssetProvider,
   getUserRegistrationProver,
 } from "@umbra-privacy/web-zk-prover";
-import { Wallet, WalletAccount } from "@wallet-standard/base";
-import { useState } from "react";
+import { useRef } from "react";
+import { useWallet } from "@/app/contexts/wallet-context";
+import { Address } from "@solana/kit";
+import { nativeAmount } from "@/lib/payments/amount";
+
+const UMBRA_CLIENT_CONFIG = {
+  network: "devnet" as const,
+  rpcUrl: "https://api.devnet.solana.com",
+  rpcSubscriptionsUrl: "wss://api.devnet.solana.com",
+  indexerApiEndpoint: "https://utxo-indexer.api-devnet.umbraprivacy.com",
+  deferMasterSeedSignature: true,
+};
+
+type UmbraUserAccount = Awaited<
+  ReturnType<ReturnType<typeof getUserAccountQuerierFunction>>
+>;
+
+export function isUmbraAccountFullyRegistered(
+  account?: UmbraUserAccount | null,
+) {
+  return (
+    !!account &&
+    account.state === "exists" &&
+    account.data.isInitialised &&
+    account.data.isUserAccountX25519KeyRegistered &&
+    account.data.isUserCommitmentRegistered &&
+    account.data.isActiveForAnonymousUsage
+  );
+}
 
 export function useUmbra() {
-  const [client, setClient] = useState<IUmbraClient>();
+  const { connectedWallet } = useWallet();
+  const clientRef = useRef<{ address: string; client: IUmbraClient } | null>(
+    null,
+  );
 
-  const buildClient = async (signer: IUmbraSigner) => {
-    return await getUmbraClient({
+  async function buildClient(signer: IUmbraSigner) {
+    return getUmbraClient({
       signer,
-      network: "devnet",
-      rpcUrl: "https://api.devnet.solana.com",
-      rpcSubscriptionsUrl: "wss://api.devnet.solana.com",
-      indexerApiEndpoint: "https://utxo-indexer.api-devnet.umbraprivacy.com",
-      deferMasterSeedSignature: true,
+      ...UMBRA_CLIENT_CONFIG,
     });
-  };
+  }
 
-  const getClient = async (signer: IUmbraSigner) => {
-    const umbraClient = client ?? (await buildClient(signer));
-
-    if (!client) {
-      setClient(umbraClient);
+  function getRequiredConnectedWallet() {
+    if (!connectedWallet) {
+      throw new Error("Wallet not connected");
     }
 
-    return umbraClient;
-  };
+    return connectedWallet;
+  }
 
-  const registerAccount = async ({
-    wallet,
-    account,
-  }: {
-    account: WalletAccount;
-    wallet: Wallet;
-    }, {
-    callbacks
-  }: {
-    callbacks?: UserRegistrationCallbacks
-  } = {}) => {
-    const signer = createSignerFromWalletAccount(wallet, account);
+  function getConnectedSigner() {
+    const { wallet, account } = getRequiredConnectedWallet();
+    return createSignerFromWalletAccount(wallet, account);
+  }
 
+  async function getClient(signer: IUmbraSigner) {
+    if (clientRef.current?.address === signer.address) {
+      return clientRef.current.client;
+    }
+
+    const client = await buildClient(signer);
+    clientRef.current = {
+      address: signer.address,
+      client,
+    };
+
+    return client;
+  }
+
+  async function registerAccount({
+    callbacks,
+    signer: providedSigner
+  }: { callbacks?: UserRegistrationCallbacks; signer?: IUmbraSigner } = {}) {
+    const signer = providedSigner ?? getConnectedSigner();
     const umbraClient = await getClient(signer);
 
     const zkProver = getUserRegistrationProver({
@@ -64,68 +104,66 @@ export function useUmbra() {
       { zkProver },
     );
 
-    const signatures = await register({
+    return register({
       confidential: true,
       anonymous: true,
-      callbacks
+      callbacks,
     });
+  }
 
-    return signatures;
-  };
+  async function getUserAccount() {
+    if (!connectedWallet) {
+      return null;
+    }
 
-  const getUserAccount = async ({
-    wallet,
-    account,
-  }: {
-    account: WalletAccount;
-    wallet: Wallet;
-  }) => {
     try {
-      const signer = createSignerFromWalletAccount(wallet, account);
+      const signer = getConnectedSigner();
       const umbraClient = await getClient(signer);
-
       const queryAccount = getUserAccountQuerierFunction({
         client: umbraClient,
       });
+
       return queryAccount(signer.address);
     } catch {
       return null;
     }
-  };
+  }
 
-  const isAcountRegistered = async (params: {
-    account: WalletAccount;
-    wallet: Wallet;
-  }): Promise<boolean> => {
+  async function isAccountRegistered(): Promise<boolean> {
     try {
-      const account = await getUserAccount({
-        account: params.account,
-        wallet: params.wallet,
-      });
-
-      return isAccountFullyRegistered(account)
+      const account = await getUserAccount();
+      return isUmbraAccountFullyRegistered(account);
     } catch {
       return false;
     }
-  };
+  }
 
-  function isAccountFullyRegistered(
-    account?: Awaited<ReturnType<ReturnType<typeof useUmbra>["getUserAccount"]>>
-  ) {
-    return (
-      !!account &&
-      account.state === "exists" &&
-      account.data.isInitialised &&
-      account.data.isUserAccountX25519KeyRegistered &&
-      account.data.isUserCommitmentRegistered &&
-      account.data.isActiveForAnonymousUsage
-    );
+  async function depositAmount({ amount, address }:{amount: number, address: string}) {
+    // try {
+    //   const signer = getConnectedSigner();
+    //   const client= await getClient(signer);
+    //   const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({ client })
+
+    //   const USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address
+    //   const toNativeAmount  = toNativeAmount(amount, 6)
+
+    //   const result = await deposit(address as Address, USDC, toNativeAmount );
+
+    //   console.log("Queue signature:", result.queueSignature);
+    //   console.log("Callback signature:", result.callbackSignature);
+    // } catch (error) {
+    //   console.log('Somehting went wrong', error)
+    // }
   }
 
   return {
+    connectedWallet,
+    isReady: Boolean(connectedWallet),
     registerAccount,
     getUserAccount,
-    isAcountRegistered,
-    isAccountFullyRegistered
+    isAccountRegistered,
+    isAcountRegistered: isAccountRegistered,
+    isAccountFullyRegistered: isUmbraAccountFullyRegistered,
+    depositAmount,
   };
 }

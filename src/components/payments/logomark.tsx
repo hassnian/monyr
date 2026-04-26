@@ -8,7 +8,7 @@ type Props = {
 };
 
 /**
- * The wordmark. Serif italic "Hush" with a trailing dot in amber.
+ * The wordmark. Serif italic "Monyr" with a trailing dot in amber.
  * The dot is the logo — readable at 20 feet, distinctive at 20 pixels.
  */
 export function Logomark({ className, href = "/", size = "md" }: Props) {
@@ -20,7 +20,7 @@ export function Logomark({ className, href = "/", size = "md" }: Props) {
         className
       )}
     >
-      <span className="text-foreground">Hush</span>
+      <span className="text-foreground">Monyr</span>
       <span aria-hidden className="ml-0.5 translate-y-[-0.05em] text-primary">
         .
       </span>
@@ -31,7 +31,7 @@ export function Logomark({ className, href = "/", size = "md" }: Props) {
   return (
     <Link
       href={href}
-      aria-label="Hush — home"
+      aria-label="Monyr — home"
       className="outline-none rounded-md focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       {content}

@@ -9,31 +9,33 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { GradientAvatar } from "@/components/hush/gradient-avatar";
-import { HandleText } from "@/components/hush/handle-text";
-import { AmountDisplay } from "@/components/hush/amount-display";
-import { ArrowRight, Check, Wallet, Lock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { GradientAvatar } from "@/components/payments/gradient-avatar";
+import { HandleText } from "@/components/payments/handle-text";
+import { AmountDisplay } from "@/components/payments/amount-display";
+import { ArrowRight, Check, Loader2, Lock } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useWallet } from "@/app/contexts/wallet-context";
+import { useUmbra } from "@/app/hooks/useUmbra";
+import UmbraRegister from "@/app/components/claim/UmbraRegister";
+import type { ProfileIdentity } from "./profile.types";
 
-type Props = {
+type Props = ProfileIdentity & {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  handle: string;
-  displayName: string;
   amount: number;
   memo?: string;
-  subPath?: string;
   invoiceId?: string;
 };
 
-type Step = "confirm" | "wallet" | "proving" | "success";
+type Step = "checking" | "register" | "confirm" | "proving" | "success";
 
 /**
- * The payment confirmation modal. UI-only — no real signing.
- * Steps: confirm → wallet → proving → success. Each step is deliberate;
- * the proving step is a trust-building moment, not a loading screen.
+ * The payment confirmation modal. UI-only — no real signing yet.
+ * Steps: checking → (register) → confirm → proving → success.
+ * The register step only appears the first time a payer uses Monyr;
+ * returning payers skip straight to confirm.
  */
-export function PaySheet({
+export function PayConfirmationModal({
   open,
   onOpenChange,
   handle,
@@ -42,24 +44,45 @@ export function PaySheet({
   memo,
   subPath,
   invoiceId,
+  ownerPubkey
 }: Props) {
-  const [step, setStep] = useState<Step>("confirm");
+  const [step, setStep] = useState<Step>("checking");
+  const { connectedWallet } = useWallet();
+  const { getUserAccount, isAccountFullyRegistered, depositAmount } = useUmbra();
+
+  const { data: userAccount, isPending } = useQuery({
+    enabled: open && Boolean(connectedWallet),
+    queryKey: ["umbra-user-account", connectedWallet?.account.address],
+    queryFn: getUserAccount,
+  });
+
+  useEffect(() => {
+    if (!open || step !== "checking" || isPending) return;
+    setStep(
+      isAccountFullyRegistered(userAccount ?? undefined)
+        ? "confirm"
+        : "register",
+    );
+  }, [open, step, isPending, userAccount, isAccountFullyRegistered]);
 
   useEffect(() => {
     if (!open) {
-      // reset after the close animation so the next open is clean
-      const t = setTimeout(() => setStep("confirm"), 300);
+      // reset after the close animation so the next open re-checks cleanly
+      const t = setTimeout(() => setStep("checking"), 300);
       return () => clearTimeout(t);
     }
   }, [open]);
 
-  // Mock: advance through the stages automatically once wallet is "connected"
-  useEffect(() => {
-    if (step === "proving") {
-      const t = setTimeout(() => setStep("success"), 3200);
-      return () => clearTimeout(t);
-    }
-  }, [step]);
+  // useEffect(() => {
+  //   if (step === "proving") {
+  //     const t = setTimeout(() => setStep("success"), 3200);
+  //     return () => clearTimeout(t);
+  //   }
+  // }, [step]);
+
+  function confirm() {
+    depositAmount({ address: ownerPubkey, amount })
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,6 +90,21 @@ export function PaySheet({
         className="max-w-md p-0 overflow-hidden bg-popover ring-1 ring-border"
         showCloseButton={step !== "proving"}
       >
+        {step === "checking" && (
+          <CheckingStep
+            handle={handle}
+            displayName={displayName}
+            subPath={subPath}
+          />
+        )}
+        {step === "register" && (
+          <RegisterStep
+            handle={handle}
+            displayName={displayName}
+            subPath={subPath}
+            onComplete={() => setStep("confirm")}
+          />
+        )}
         {step === "confirm" && (
           <ConfirmStep
             handle={handle}
@@ -75,11 +113,8 @@ export function PaySheet({
             memo={memo}
             subPath={subPath}
             invoiceId={invoiceId}
-            onContinue={() => setStep("wallet")}
+            onContinue={() => confirm()}
           />
-        )}
-        {step === "wallet" && (
-          <WalletStep onSigned={() => setStep("proving")} />
         )}
         {step === "proving" && <ProvingStep />}
         {step === "success" && (
@@ -95,6 +130,98 @@ export function PaySheet({
   );
 }
 
+function RecipientChip({
+  handle,
+  displayName,
+  subPath,
+}: {
+  handle: string;
+  displayName: string | null;
+  subPath?: string;
+}) {
+  const name = displayName ?? handle;
+  return (
+    <div className="flex items-center gap-3 pb-5">
+      <GradientAvatar handle={handle} size={40} />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">
+          Paying {name}
+        </p>
+        <HandleText
+          handle={handle}
+          subPath={subPath}
+          size="sm"
+          className="text-muted-foreground"
+        />
+      </div>
+    </div>
+  );
+}
+
+function CheckingStep({
+  handle,
+  displayName,
+  subPath,
+}: {
+  handle: string;
+  displayName: string | null;
+  subPath?: string;
+}) {
+  return (
+    <div className="p-6">
+      <DialogHeader className="sr-only">
+        <DialogTitle>Getting things ready</DialogTitle>
+        <DialogDescription>Checking your account.</DialogDescription>
+      </DialogHeader>
+      <RecipientChip
+        handle={handle}
+        displayName={displayName}
+        subPath={subPath}
+      />
+      <div className="flex flex-col items-center justify-center py-8 text-center">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <p className="mt-3 text-sm text-muted-foreground">
+          Getting things ready…
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function RegisterStep({
+  handle,
+  displayName,
+  subPath,
+  onComplete,
+}: {
+  handle: string;
+  displayName: string | null;
+  subPath?: string;
+  onComplete: () => void;
+}) {
+  return (
+    <div className="p-6">
+      <RecipientChip
+        handle={handle}
+        displayName={displayName}
+        subPath={subPath}
+      />
+      <DialogHeader>
+        <DialogTitle className="font-serif text-2xl font-normal tracking-tight">
+          Just the one time.
+        </DialogTitle>
+        <DialogDescription>
+          A quick setup for your private account — three signatures, then
+          paying is a single tap. Forever.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="mt-5">
+        <UmbraRegister onComplete={onComplete} />
+      </div>
+    </div>
+  );
+}
+
 function ConfirmStep({
   handle,
   displayName,
@@ -105,7 +232,7 @@ function ConfirmStep({
   onContinue,
 }: {
   handle: string;
-  displayName: string;
+  displayName: string | null;
   amount: number;
   memo?: string;
   subPath?: string;
@@ -124,9 +251,11 @@ function ConfirmStep({
       <div className="flex items-center gap-3 pb-5">
         <GradientAvatar handle={handle} size={40} />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">
-            {displayName}
-          </p>
+          {displayName && (
+            <p className="text-sm font-medium text-foreground truncate">
+              {displayName}
+            </p>
+          )}
           <HandleText
             handle={handle}
             subPath={subPath}
@@ -156,63 +285,9 @@ function ConfirmStep({
         onClick={onContinue}
         className="mt-5 h-12 w-full rounded-xl text-base font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
       >
-        Continue
+        Sign & send
         <ArrowRight className="ml-1.5 size-4" />
       </Button>
-    </div>
-  );
-}
-
-function WalletStep({ onSigned }: { onSigned: () => void }) {
-  const wallets = [
-    { name: "Phantom", color: "oklch(0.55 0.2 285)" },
-    { name: "Solflare", color: "oklch(0.78 0.16 55)" },
-    { name: "Backpack", color: "oklch(0.72 0.15 25)" },
-  ];
-
-  return (
-    <div className="p-6">
-      <DialogHeader>
-        <DialogTitle className="font-serif text-2xl font-normal tracking-tight">
-          Connect a wallet
-        </DialogTitle>
-        <DialogDescription>
-          One signature. We don&apos;t hold your keys.
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="mt-5 space-y-2">
-        {wallets.map((w) => (
-          <button
-            key={w.name}
-            type="button"
-            onClick={onSigned}
-            className={cn(
-              "group flex w-full items-center gap-3 rounded-lg border border-border bg-surface-raised/40 p-3",
-              "hover:border-border-strong hover:bg-surface-raised transition-colors"
-            )}
-          >
-            <span
-              className="flex size-9 items-center justify-center rounded-md"
-              style={{ backgroundColor: w.color, opacity: 0.18 }}
-            >
-              <Wallet
-                className="size-4"
-                style={{ color: w.color, opacity: 1 }}
-              />
-            </span>
-            <span className="flex-1 text-left text-sm font-medium text-foreground">
-              {w.name}
-            </span>
-            <ArrowRight className="size-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
-          </button>
-        ))}
-      </div>
-
-      <p className="mt-5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <Lock className="size-3" />
-        Hush never sees your keys, seed phrase, or balances.
-      </p>
     </div>
   );
 }
@@ -277,7 +352,7 @@ function SuccessStep({
   onClose,
 }: {
   handle: string;
-  displayName: string;
+  displayName: string | null;
   amount: number;
   onClose: () => void;
 }) {
@@ -298,7 +373,9 @@ function SuccessStep({
         <AmountDisplay amount={amount} size="lg" className="text-foreground/90" />
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Sent to {displayName}. Only {handle} can see the amount.
+        {displayName
+          ? `Sent to ${displayName}. Only ${handle} can see the amount.`
+          : `Sent privately. Only ${handle} can see the amount.`}
       </p>
 
       <div className="mt-6 rounded-lg border border-border bg-surface-raised/40 p-3.5 text-left">

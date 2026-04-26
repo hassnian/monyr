@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PageFrame } from "@/components/hush/page-frame";
+import { PageFrame } from "@/components/payments/page-frame";
+import { WalletConnectButton } from "@/app/components/wallet/WalletConnectButton";
 import { ProfileCard } from "./_components/profile-card";
 import { getHandle } from "../actions/handles";
 
@@ -33,10 +34,11 @@ export default async function HandleProfilePage({
   if (!profile) return notFound()
 
   return (
-    <PageFrame glow>
+    <PageFrame glow topRight={<WalletConnectButton />}>
       <ProfileCard
         handle={profile.handle}
         displayName={profile.displayName}
+        ownerPubkey={profile.ownerPubkey}
         bio={profile.bio}
         variant={{ kind: "tipjar" }}
       />
@@ -55,7 +57,7 @@ function FooterNote({ handle }: { handle: string }) {
       >
         Claim your handle
       </Link>
-      . Pay {handle} privately — no signup required.
+      . Pay {handle} privately.
     </p>
   );
 }

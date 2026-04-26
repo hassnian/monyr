@@ -5,11 +5,14 @@ import { Check, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { GradientAvatar } from "@/components/hush/gradient-avatar";
-import { HandleText } from "@/components/hush/handle-text";
-import { AmountDisplay } from "@/components/hush/amount-display";
-import { PaySheet } from "./pay-sheet";
+import { GradientAvatar } from "@/components/payments/gradient-avatar";
+import { HandleText } from "@/components/payments/handle-text";
+import { AmountDisplay } from "@/components/payments/amount-display";
+import { PayConfirmationModal } from "./pay-confirmation-modal";
 import { cn } from "@/lib/utils";
+import { useWallet } from "@/app/contexts/wallet-context";
+import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
+import type { ProfileDetails } from "./profile.types";
 
 type Variant =
   | { kind: "tipjar"; presets?: number[] }
@@ -22,11 +25,7 @@ type Variant =
       dueAt?: string;
     };
 
-type Props = {
-  handle: string;
-  displayName: string | null;
-  bio: string | null;
-  subPath?: string;
+type Props = ProfileDetails & {
   variant: Variant;
 };
 
@@ -38,21 +37,42 @@ export function ProfileCard({
   bio,
   subPath,
   variant,
+  ownerPubkey
 }: Props) {
-  const presets =
-    variant.kind === "tipjar" ? (variant.presets ?? DEFAULT_PRESETS) : [];
-
+  const presets = variant.kind === "tipjar" ? (variant.presets ?? DEFAULT_PRESETS) : [];
   const isInvoice = variant.kind === "invoice";
 
-  const [amount, setAmount] = useState<string>(
-    isInvoice ? variant.amount.toFixed(2) : "",
-  );
+  const [amount, setAmount] = useState<string>(isInvoice ? variant.amount.toFixed(2) : "");
   const [memo, setMemo] = useState<string>("");
   const [showMemo, setShowMemo] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [openConfirmationModal, setConfirmationModalOpen] = useState(false);
+  const [openConnectWalletModal, setConnectWalletModalOpen] = useState(false);
+
+  const { connectedWallet } = useWallet();
 
   const numericAmount = Number.parseFloat(amount || "0");
   const canPay = numericAmount > 0;
+
+  const isPayDisabled = !isInvoice && !canPay;
+
+  const label = isInvoice
+    ? `Pay ${variant.amount.toFixed(2)} USDC privately`
+    : canPay
+      ? `Pay ${numericAmount.toFixed(2)} USDC privately`
+      : "Enter an amount";
+
+  function confirmPay() {
+    if (!connectedWallet) {
+      setConnectWalletModalOpen(true);
+      return;
+    }
+
+    if (!canPay) {
+      return;
+    }
+
+    setConfirmationModalOpen(true);
+  }
 
   return (
     <section
@@ -98,12 +118,14 @@ export function ProfileCard({
         <div className="flex flex-col items-start gap-5">
           <GradientAvatar handle={handle} size={72} />
           <div className="space-y-1">
-            <h1
-              id="profile-name"
-              className="font-serif text-4xl md:text-5xl leading-[1.05] tracking-tight text-foreground"
-            >
-              {displayName}
-            </h1>
+            {displayName && (
+              <h1
+                id="profile-name"
+                className="font-serif text-4xl md:text-5xl leading-[1.05] tracking-tight text-foreground"
+              >
+                {displayName}
+              </h1>
+            )}
             <HandleText
               handle={handle}
               subPath={subPath}
@@ -174,8 +196,8 @@ export function ProfileCard({
 
         <Button
           type="button"
-          onClick={() => setOpen(true)}
-          disabled={!canPay}
+          onClick={confirmPay}
+          disabled={isPayDisabled}
           className={cn(
             "mt-7 h-12 w-full rounded-xl text-base font-semibold",
             "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -183,23 +205,31 @@ export function ProfileCard({
             "transition-all",
           )}
         >
-          {isInvoice
-            ? `Pay ${variant.amount.toFixed(2)} USDC privately`
-            : canPay
-              ? `Pay ${numericAmount.toFixed(2)} USDC privately`
-              : "Enter an amount"}
+          {label}
         </Button>
       </div>
 
-      <PaySheet
-        open={open}
-        onOpenChange={setOpen}
+      <PayConfirmationModal
+        open={openConfirmationModal}
+        onOpenChange={setConfirmationModalOpen}
         handle={handle}
+        ownerPubkey={ownerPubkey}
         displayName={displayName}
         amount={numericAmount}
-        memo={memo}
+        memo={memo || undefined}
         subPath={subPath}
         invoiceId={isInvoice ? variant.invoiceId : undefined}
+      />
+
+      <ConnectWalletModal
+        open={openConnectWalletModal}
+        onOpenChange={setConnectWalletModalOpen}
+        onConnected={() => {
+          setConnectWalletModalOpen(false);
+          if (canPay) {
+            setConfirmationModalOpen(true);
+          }
+        }}
       />
     </section>
   );

@@ -1,4 +1,4 @@
-import { PageFrame } from "@/components/hush/page-frame";
+import { PageFrame } from "@/components/payments/page-frame";
 import { ClaimFlow } from "../components/claim/ClaimFlow";
 
 export default function ClaimPage() {

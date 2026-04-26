@@ -6,19 +6,22 @@ import { eq } from "drizzle-orm";
 
 export async function addHandle({
   handle,
-  ownerPubkey,
+  vaultPubkey,
+  encryptedVaultSecret,
   bio,
   displayName
 }: {
     handle: string,
-    ownerPubkey: string,
+    vaultPubkey: string,
+    encryptedVaultSecret: string,
     bio?: string
     displayName?: string
 }) {
   try {
     await db.insert(handles).values({
       handle,
-      owner_pubkey: ownerPubkey,
+      vault_pubkey: vaultPubkey,
+      encrypted_vault_secret: encryptedVaultSecret,
       bio,
       display_name: displayName
     })
@@ -39,6 +42,7 @@ export async function getHandle(handle: string) {
     const values = await db.select({
       handle: handles.handle,
       displayName: handles.display_name,
+      vaultPubkey: handles.vault_pubkey,
       bio: handles.bio,
     }).from(handles)
       .where(eq(handles.handle, handle))

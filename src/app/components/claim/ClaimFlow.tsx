@@ -1,13 +1,18 @@
 "use client";
 
+import { handleUrl } from "@/lib/brand";
 import { useState } from "react";
 import Link from "next/link";
+
 import { useClaimFlow } from "@/app/hooks/useClaimFlow";
 import HandleClaimForm from "./ClaimForm";
-import UmbraRegister from "./UmbraRegister";
+
 import { useWallet } from "@/app/contexts/wallet-context";
+
 import { ConnectWallets } from "../wallet/ConnectWallets";
+
 import { ArrowRight, Check, Copy } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
 export function ClaimFlow() {
@@ -38,25 +43,11 @@ export function ClaimFlow() {
             {step === "connect-wallet" && (
               <>
                 <StepTitle
-                  eyebrow="Step 1 of 3"
                   title="Connect your wallet."
-                  description="Bring your own wallet — Hush never holds your keys or your balance."
+                  description="Bring your own wallet — Monyr never holds your keys or your balance."
                 />
                 <div className="mt-6">
-                  <ConnectWallets onConnected={() => goTo("register")} />
-                </div>
-              </>
-            )}
-
-            {step === "register" && (
-              <>
-                <StepTitle
-                  eyebrow="Step 2 of 3"
-                  title="Activate private keys."
-                  description="A few wallet approvals to set up your private account on-chain. After this, every payment you receive is end-to-end encrypted."
-                />
-                <div className="mt-6">
-                  <UmbraRegister onComplete={() => goTo("claim-handle")} />
+                  <ConnectWallets onConnected={() => goTo("claim-handle")} />
                 </div>
               </>
             )}
@@ -64,9 +55,8 @@ export function ClaimFlow() {
             {step === "claim-handle" && (
               <>
                 <StepTitle
-                  eyebrow="Step 3 of 3"
                   title="Claim your handle."
-                  description="This is the name everyone will pay. Short is good. Forever is longer."
+                  description="Pick a name, click claim. One signature sets everything up — no extra approvals, no gas."
                 />
                 <div className="mt-6">
                   <HandleClaimForm
@@ -101,7 +91,6 @@ export function ClaimFlow() {
 function ClaimHeader({ step }: { step: string }) {
   const steps = [
     { id: "connect-wallet", label: "Wallet" },
-    { id: "register", label: "Keys" },
     { id: "claim-handle", label: "Handle" },
   ];
   const activeIndex = steps.findIndex((s) => s.id === step);
@@ -153,19 +142,14 @@ function ClaimHeader({ step }: { step: string }) {
 }
 
 function StepTitle({
-  eyebrow,
   title,
   description,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {eyebrow}
-      </p>
       <h2 className="font-serif text-2xl leading-tight tracking-tight text-foreground">
         {title}
       </h2>
@@ -250,7 +234,7 @@ function ClaimedView({ handle }: { handle: string }) {
       <p className="mt-12 max-w-sm font-serif text-[13px] italic leading-relaxed text-muted-foreground/70">
         Tip &nbsp;·&nbsp; paste{" "}
         <span className="font-mono not-italic tracking-tight text-foreground/80">
-          hush.to/@{displayHandle}
+          {handleUrl(displayHandle)}
         </span>{" "}
         into a Twitter bio, a newsletter footer, or a GitHub README. Payers
         don&apos;t need an account.
@@ -261,7 +245,7 @@ function ClaimedView({ handle }: { handle: string }) {
 
 function UrlShowcase({ handle }: { handle: string }) {
   const [copied, setCopied] = useState(false);
-  const url = `hush.to/@${handle}`;
+  const url = handleUrl(handle);
 
   const onCopy = async () => {
     try {

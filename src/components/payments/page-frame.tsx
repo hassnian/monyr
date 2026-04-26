@@ -9,15 +9,25 @@ type Props = {
   glow?: boolean;
   /** Show a help link in the top-right corner */
   helpHref?: string;
+  /** Custom slot rendered at the top-right of the frame (e.g. wallet button). Appears alongside helpHref if both are provided. */
+  topRight?: React.ReactNode;
 };
 
 /**
  * The canvas for focused single-purpose pages: public profile, claim flow.
  * - Near-black bg
  * - Grain + optional amber vignette
- * - Minimal top chrome: wordmark left, one optional help link right
+ * - Minimal top chrome: wordmark left, one optional help link / slot right
  */
-export function PageFrame({ children, className, glow = false, helpHref }: Props) {
+export function PageFrame({
+  children,
+  className,
+  glow = false,
+  helpHref,
+  topRight,
+}: Props) {
+  const hasTopRight = Boolean(helpHref || topRight);
+
   return (
     <div className="relative flex min-h-screen flex-col">
       {glow && (
@@ -30,13 +40,18 @@ export function PageFrame({ children, className, glow = false, helpHref }: Props
 
       <header className="relative z-10 flex items-center justify-between px-6 py-6 md:px-10 md:py-8">
         <Logomark />
-        {helpHref && (
-          <Link
-            href={helpHref}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Learn how it works
-          </Link>
+        {hasTopRight && (
+          <div className="flex items-center gap-4">
+            {helpHref && (
+              <Link
+                href={helpHref}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Learn how it works
+              </Link>
+            )}
+            {topRight}
+          </div>
         )}
       </header>
 

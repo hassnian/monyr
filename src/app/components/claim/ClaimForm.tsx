@@ -1,6 +1,8 @@
 "use client";
 
+import { handleUrl } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
+
 import {
   Field,
   FieldDescription,
@@ -8,6 +10,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { revalidateLogic, useForm } from "@tanstack/react-form";
@@ -16,7 +19,11 @@ import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { addHandle, hadnleExists as handleExists } from "@/app/actions/handles";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { useVault } from "@/app/hooks/useVault";
+import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
+import { useUmbra } from "@/app/hooks/useUmbra";
+import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 
 const schema = z.object({
   handle: z
@@ -33,7 +40,34 @@ const schema = z.object({
 
 const HANDLE_TAKEN_MESSAGE = "This handle is already taken.";
 const normalizeHandle = (value: string) => value.trim().toLowerCase();
-const isValidHandleFormat = (value: string) => schema.shape.handle.safeParse(value).success;
+const isValidHandleFormat = (value: string) =>
+  schema.shape.handle.safeParse(value).success;
+
+type SubmitPhase = "idle" | "signing" | "setup" | "publishing";
+
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function waitForVaultBalance(
+  vaultPubkey: string,
+  minimumLamports: bigint,
+  timeoutMs = 30_000,
+) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const balance = await getVaultBalance(vaultPubkey);
+    const lamports = BigInt(balance.lamports);
+
+    if (lamports >= minimumLamports) {
+      return lamports;
+    }
+
+    await delay(1_000);
+  }
+
+  throw new Error("Timed out waiting for vault funding");
+}
 
 type Props = {
   address: string;
@@ -42,6 +76,11 @@ type Props = {
 
 export default function HandleClaimForm({ address, onClaimed }: Props) {
   const availabilityCacheRef = useRef(new Map<string, boolean>());
+  const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
+  const [setupStatus, setSetupStatus] = useState("Setting up privately…");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { createEncryptedVault } = useVault()
+  const { registerAccount: registerUmbraAccount } = useUmbra()
 
   const form = useForm({
     defaultValues: {
@@ -55,19 +94,81 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
     },
     onSubmit: async ({ value }) => {
       const handle = normalizeHandle(value.handle);
+      setSubmitError(null);
+      setSetupStatus("Setting up privately…");
+
       try {
+        // User-visible wallet signature for vault encryption.
+        setSubmitPhase("signing");
+        const wallet = await createEncryptedVault(handle)
+
+        // Fund the vault and wait until the balance is confirmed on-chain.
+        setSubmitPhase("setup");
+        const sponsorResult = await sponsorVault(wallet.vaultPubkey)
+
+        await waitForVaultBalance(
+          wallet.vaultPubkey,
+          BigInt(sponsorResult.lamports),
+        )
+
+        // Register the vault with Umbra using the sponsored vault signer.
+        const umbraSigner = createUmbraSignerFromKeyPair(wallet.keyPairSigner)
+
+        await registerUmbraAccount({
+          signer: umbraSigner,
+          callbacks: {
+            userAccountInitialisation: {
+              pre: async (tx) => {
+                setSetupStatus("Opening your private account…");
+                console.log("Creating account...");
+                console.log("Transaction:", tx);
+              },
+              post: async (_, sig) => {
+                console.log(`Account created: ${sig}`);
+              },
+            },
+            registerX25519PublicKey: {
+              pre: async () => {
+                setSetupStatus("Enabling encrypted balances…");
+                console.log("Registering X25519 key...");
+              },
+              post: async (_, sig) => {
+                console.log(`Encryption key registered: ${sig}`);
+              },
+            },
+            registerUserForAnonymousUsage: {
+              pre: async () => {
+                setSetupStatus("Turning on anonymous receiving…");
+                console.log("Registering for anonymous usage...");
+              },
+              post: async (_, sig) => {
+                console.log(`Anonymous registration complete: ${sig}`);
+              },
+            },
+          }
+        })
+
+        // Publish the handle record after private setup completes.
+        setSubmitPhase("publishing");
         await addHandle({
           handle,
-          ownerPubkey: address,
+          vaultPubkey: wallet.vaultPubkey,
+          encryptedVaultSecret: wallet.encryptedVaultSecret,
           displayName: value.displayName.trim() || undefined,
           bio: value.bio.trim() || undefined,
         });
+
+        setSubmitPhase("idle");
         onClaimed?.(handle);
-      } catch(errror) {
-        console.log('Claim failed', errror)
+      } catch (error) {
+        console.log("Claim failed", error);
+        setSubmitPhase("idle");
+        setSubmitError("That didn't go through. Try again.");
       }
     },
   });
+
+  const isSubmittingPhase = submitPhase !== "idle";
 
   return (
     <form
@@ -77,7 +178,6 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
       }}
     >
       <FieldGroup className="gap-5">
-        {/* Handle — the brand primitive, gets the most visual weight */}
         <form.Field
           name="handle"
           children={(field) => {
@@ -86,8 +186,10 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
               field.state.meta.isTouched && !field.state.meta.isValid;
             const isValidFormat = isValidHandleFormat(value);
             const availabilityError = field.state.meta.errorMap.onChange;
-            const hasCheckedAvailability = availabilityCacheRef.current.has(value);
-            const isCheckingAvailability = isValidFormat && field.state.meta.isValidating;
+            const hasCheckedAvailability =
+              availabilityCacheRef.current.has(value);
+            const isCheckingAvailability =
+              isValidFormat && field.state.meta.isValidating;
             const isTaken = availabilityError === HANDLE_TAKEN_MESSAGE;
             const isAvailable =
               isValidFormat &&
@@ -123,6 +225,7 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
                     placeholder="alice"
                     autoComplete="off"
                     autoFocus
+                    disabled={isSubmittingPhase}
                     className={cn(
                       "h-12 pl-8 pr-10 text-lg font-medium tracking-tight",
                       "border-border-strong bg-surface-raised/30",
@@ -160,7 +263,7 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
                     <span className="text-primary">
                       @{value} is yours. Lives at{" "}
                       <span className="text-foreground/90 font-medium">
-                        hush.to/@{value}
+                        {handleUrl(value)}
                       </span>
                     </span>
                   ) : (
@@ -221,6 +324,7 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
                   onChange={(e) => field.handleChange(e.target.value)}
                   aria-invalid={isInvalid}
                   placeholder="Alice Chen"
+                  disabled={isSubmittingPhase}
                   className="h-10 border-border-strong bg-surface-raised/30 focus-visible:ring-primary/30"
                 />
                 <FieldDescription className="text-[11px]">
@@ -258,6 +362,7 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
                   aria-invalid={isInvalid}
                   placeholder="Essays on privacy and quiet internet things."
                   maxLength={120}
+                  disabled={isSubmittingPhase}
                   className="min-h-10 border-border-strong bg-surface-raised/30 focus-visible:ring-primary/30 resize-none"
                 />
                 <FieldDescription className="text-[11px]">
@@ -270,45 +375,51 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
         />
       </FieldGroup>
 
-      {address && (
-        <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-border/60 bg-surface-raised/40 p-3">
-          <div className="min-w-0 text-[12.5px] leading-relaxed">
-            <p className="text-muted-foreground">Signing with</p>
-            <p className="font-mono text-foreground/90 truncate">
-              {truncateAddress(address)}
-            </p>
-          </div>
-        </div>
-      )}
-
       <form.Subscribe
-        selector={(state) => [state.canSubmit, state.isSubmitting] as const}
-        children={([canSubmit, isSubmitting]) => (
-          <Button
-            type="submit"
-            disabled={!canSubmit || isSubmitting}
-            className="mt-7 h-12 w-full rounded-xl text-base font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 size-4 animate-spin" />
-                Claiming…
-              </>
-            ) : (
-              "Claim my handle"
-            )}
-          </Button>
-        )}
+        selector={(state) =>
+          [state.canSubmit, state.values.handle] as const
+        }
+        children={([canSubmit, handleValue]) => {
+          const prettyHandle = normalizeHandle(handleValue || "your-handle");
+          return (
+            <Button
+              type="submit"
+              disabled={!canSubmit || isSubmittingPhase}
+              className="mt-7 h-12 w-full rounded-xl text-base font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {submitPhase === "idle" && "Claim my handle"}
+              {submitPhase === "signing" && (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Waiting for wallet signature…
+                </>
+              )}
+              {submitPhase === "setup" && (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  {setupStatus}
+                </>
+              )}
+              {submitPhase === "publishing" && (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Publishing @{prettyHandle}…
+                </>
+              )}
+            </Button>
+          );
+        }}
       />
 
-      <p className="mt-4 text-center text-[11px] text-muted-foreground/80">
-        Handles are first-come, first-served. No fee to claim.
-      </p>
+      {submitError ? (
+        <p className="mt-3 text-center text-[12px] text-destructive">
+          {submitError}
+        </p>
+      ) : (
+        <p className="mt-4 text-center font-serif italic text-[12.5px] leading-relaxed text-muted-foreground/80">
+          One signature. No gas. Handles are first-come, first-served.
+        </p>
+      )}
     </form>
   );
-}
-
-function truncateAddress(addr: string) {
-  if (addr.length <= 12) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
 }

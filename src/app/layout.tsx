@@ -21,7 +21,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Hush — private payments, by handle",
+  title: "Monyr — private payments, by handle",
   description:
     "Your @handle is your private payment profile. Anyone can pay you. Nobody else sees amounts, senders, or history.",
 };
