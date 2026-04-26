@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//Users/hassnian/Documents/wiki/**)",
-      "Bash(pnpm exec *)"
-    ]
-  }
-}
