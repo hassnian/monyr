@@ -2,8 +2,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageFrame } from "@/components/payments/page-frame";
 import { ProfileCard } from "../../_components/profile-card";
-import { getMockInvoice } from "@/lib/payments/mock-profiles";
-import { useQuery } from "@tanstack/react-query";
 import { getHandle } from "@/app/actions/handles";
 
 type Params = { handle: string; id: string };
@@ -43,7 +41,8 @@ export default async function HandleInvoicePage({
       <ProfileCard
         handle={profile.handle}
         displayName={profile.displayName}
-        ownerPubkey={profile.ownerPubkey}
+        vaultPubkey={profile.vaultPubkey}
+        umbraStatus={profile.umbraStatus as "inactive" | "activating" | "active" | "failed"}
         bio={profile.bio}
         variant={variant}
         // subPath={`invoice/${invoice.id}`}

@@ -38,7 +38,8 @@ export default async function HandleProfilePage({
       <ProfileCard
         handle={profile.handle}
         displayName={profile.displayName}
-        ownerPubkey={profile.ownerPubkey}
+        vaultPubkey={profile.vaultPubkey}
+        umbraStatus={profile.umbraStatus as "inactive" | "activating" | "active" | "failed"}
         bio={profile.bio}
         variant={{ kind: "tipjar" }}
       />

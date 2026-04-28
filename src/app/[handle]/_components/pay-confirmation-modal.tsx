@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,9 @@ import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { ArrowRight, Check, Loader2, Lock } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
+import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
 import UmbraRegister from "@/app/components/claim/UmbraRegister";
 import type { ProfileIdentity } from "./profile.types";
 
@@ -27,13 +27,21 @@ type Props = ProfileIdentity & {
   invoiceId?: string;
 };
 
-type Step = "checking" | "register" | "confirm" | "proving" | "success";
+type Step =
+  | "confirm"
+  | "private-checking"
+  | "register"
+  | "private-confirm"
+  | "quick-sending"
+  | "proving"
+  | "success";
+
+type PaymentRail = "quick" | "private";
 
 /**
- * The payment confirmation modal. UI-only — no real signing yet.
- * Steps: checking → (register) → confirm → proving → success.
- * The register step only appears the first time a payer uses Monyr;
- * returning payers skip straight to confirm.
+ * Payment confirmation modal.
+ * Default path is Quick Pay: one normal wallet approval, no Umbra setup.
+ * Private Pay is opt-in and only then checks/wires Umbra registration.
  */
 export function PayConfirmationModal({
   open,
@@ -44,44 +52,64 @@ export function PayConfirmationModal({
   memo,
   subPath,
   invoiceId,
-  ownerPubkey
+  vaultPubkey,
 }: Props) {
-  const [step, setStep] = useState<Step>("checking");
+  const [step, setStep] = useState<Step>("confirm");
+  const [completedRail, setCompletedRail] = useState<PaymentRail>("quick");
   const { connectedWallet } = useWallet();
   const { getUserAccount, isAccountFullyRegistered, depositAmount } = useUmbra();
 
-  const { data: userAccount, isPending } = useQuery({
-    enabled: open && Boolean(connectedWallet),
-    queryKey: ["umbra-user-account", connectedWallet?.account.address],
-    queryFn: getUserAccount,
-  });
-
-  useEffect(() => {
-    if (!open || step !== "checking" || isPending) return;
-    setStep(
-      isAccountFullyRegistered(userAccount ?? undefined)
-        ? "confirm"
-        : "register",
-    );
-  }, [open, step, isPending, userAccount, isAccountFullyRegistered]);
-
   useEffect(() => {
     if (!open) {
-      // reset after the close animation so the next open re-checks cleanly
-      const t = setTimeout(() => setStep("checking"), 300);
+      // reset after the close animation so the next open starts at the choice screen
+      const t = setTimeout(() => {
+        setCompletedRail("quick");
+        setStep("confirm");
+      }, 300);
       return () => clearTimeout(t);
     }
   }, [open]);
 
-  // useEffect(() => {
-  //   if (step === "proving") {
-  //     const t = setTimeout(() => setStep("success"), 3200);
-  //     return () => clearTimeout(t);
-  //   }
-  // }, [step]);
 
-  function confirm() {
-    depositAmount({ address: ownerPubkey, amount })
+
+  async function startQuickPay() {
+    if (!connectedWallet) return;
+
+    setCompletedRail("quick");
+    setStep("quick-sending");
+
+    try {
+      await sendQuickUsdcPayment({
+        wallet: connectedWallet.wallet,
+        account: connectedWallet.account,
+        destinationOwner: vaultPubkey,
+        amount,
+      });
+      setStep("success");
+    } catch (error) {
+      console.error("Quick Pay failed", error);
+      setStep("confirm");
+    }
+  }
+
+  async function startPrivatePay() {
+    setCompletedRail("private");
+    setStep("private-checking");
+
+    const account = await getUserAccount();
+    setStep(isAccountFullyRegistered(account) ? "private-confirm" : "register");
+  }
+
+  async function confirmPrivatePay() {
+    setCompletedRail("private");
+    setStep("proving");
+    try {
+      await depositAmount({ amount, address: vaultPubkey });
+      setStep("success");
+    } catch (error) {
+      console.error("Private Pay failed", error);
+      setStep("confirm");
+    }
   }
 
   return (
@@ -90,7 +118,7 @@ export function PayConfirmationModal({
         className="max-w-md p-0 overflow-hidden bg-popover ring-1 ring-border"
         showCloseButton={step !== "proving"}
       >
-        {step === "checking" && (
+        {step === "private-checking" && (
           <CheckingStep
             handle={handle}
             displayName={displayName}
@@ -102,7 +130,7 @@ export function PayConfirmationModal({
             handle={handle}
             displayName={displayName}
             subPath={subPath}
-            onComplete={() => setStep("confirm")}
+            onComplete={() => setStep("private-confirm")}
           />
         )}
         {step === "confirm" && (
@@ -113,15 +141,29 @@ export function PayConfirmationModal({
             memo={memo}
             subPath={subPath}
             invoiceId={invoiceId}
-            onContinue={() => confirm()}
+            onQuickPay={startQuickPay}
+            onPrivatePay={startPrivatePay}
           />
         )}
+        {step === "private-confirm" && (
+          <PrivateConfirmStep
+            handle={handle}
+            displayName={displayName}
+            amount={amount}
+            memo={memo}
+            subPath={subPath}
+            invoiceId={invoiceId}
+            onContinue={confirmPrivatePay}
+          />
+        )}
+        {step === "quick-sending" && <QuickSendingStep />}
         {step === "proving" && <ProvingStep />}
         {step === "success" && (
           <SuccessStep
             handle={handle}
             displayName={displayName}
             amount={amount}
+            rail={completedRail}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -211,8 +253,8 @@ function RegisterStep({
           Just the one time.
         </DialogTitle>
         <DialogDescription>
-          A quick setup for your private account — three signatures, then
-          paying is a single tap. Forever.
+          Private Pay uses Umbra. Set it up once, then you can use the stronger
+          privacy route from any Monyr profile.
         </DialogDescription>
       </DialogHeader>
       <div className="mt-5">
@@ -223,6 +265,53 @@ function RegisterStep({
 }
 
 function ConfirmStep({
+  handle,
+  displayName,
+  amount,
+  memo,
+  subPath,
+  invoiceId,
+  onQuickPay,
+  onPrivatePay,
+}: {
+  handle: string;
+  displayName: string | null;
+  amount: number;
+  memo?: string;
+  subPath?: string;
+  invoiceId?: string;
+  onQuickPay: () => void;
+  onPrivatePay: () => void;
+}) {
+  return (
+    <PaymentReview
+      handle={handle}
+      displayName={displayName}
+      amount={amount}
+      memo={memo}
+      subPath={subPath}
+      invoiceId={invoiceId}
+    >
+      <div className="mt-5 space-y-2">
+        <Button
+          onClick={onQuickPay}
+          className="h-12 w-full rounded-xl text-base font-semibold ring-1 ring-primary/30 shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)] transition-all hover:bg-primary/90 hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]"
+        >
+          Pay {amount.toFixed(2)} USDC
+        </Button>
+        <button
+          type="button"
+          onClick={onPrivatePay}
+          className="block w-full rounded-md py-1.5 text-center text-[12px] text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          Use Private Pay instead
+        </button>
+      </div>
+    </PaymentReview>
+  );
+}
+
+function PrivateConfirmStep({
   handle,
   displayName,
   amount,
@@ -240,11 +329,52 @@ function ConfirmStep({
   onContinue: () => void;
 }) {
   return (
+    <PaymentReview
+      handle={handle}
+      displayName={displayName}
+      amount={amount}
+      memo={memo}
+      subPath={subPath}
+      invoiceId={invoiceId}
+    >
+      <div className="mt-4 rounded-xl border border-primary/20 bg-primary/10 p-3 text-xs leading-relaxed text-muted-foreground">
+        Private Pay routes through Umbra. Your wallet may ask for a proof/signature
+        flow before submitting.
+      </div>
+      <Button
+        onClick={onContinue}
+        className="mt-5 h-12 w-full rounded-xl text-base font-semibold hover:bg-primary/90"
+      >
+        Continue privately
+        <ArrowRight className="ml-1.5 size-4" />
+      </Button>
+    </PaymentReview>
+  );
+}
+
+function PaymentReview({
+  handle,
+  displayName,
+  amount,
+  memo,
+  subPath,
+  invoiceId,
+  children,
+}: {
+  handle: string;
+  displayName: string | null;
+  amount: number;
+  memo?: string;
+  subPath?: string;
+  invoiceId?: string;
+  children: ReactNode;
+}) {
+  return (
     <div className="p-6">
       <DialogHeader className="sr-only">
         <DialogTitle>Confirm payment to {handle}</DialogTitle>
         <DialogDescription>
-          Review the amount and memo before signing.
+          Review the amount and choose how to pay.
         </DialogDescription>
       </DialogHeader>
 
@@ -277,17 +407,28 @@ function ConfirmStep({
         )}
       </div>
 
-      <p className="mt-4 text-center text-[11.5px] text-muted-foreground/80">
-        Hidden on-chain · Gas on us
-      </p>
+      {children}
+    </div>
+  );
+}
 
-      <Button
-        onClick={onContinue}
-        className="mt-5 h-12 w-full rounded-xl text-base font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
-      >
-        Sign & send
-        <ArrowRight className="ml-1.5 size-4" />
-      </Button>
+function QuickSendingStep() {
+  return (
+    <div className="p-8 text-center" aria-live="polite">
+      <DialogHeader className="sr-only">
+        <DialogTitle>Sending payment</DialogTitle>
+      </DialogHeader>
+
+      <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+        <Loader2 className="size-6 animate-spin text-primary" />
+      </div>
+
+      {/*<h3 className="font-serif text-2xl tracking-tight text-foreground">
+        Sending payment.
+      </h3>
+      <p className="mx-auto mt-2 max-w-[32ch] text-sm text-muted-foreground">
+        Quick Pay uses a normal USDC transfer to the recipient’s Hush Vault.
+      </p>*/}
     </div>
   );
 }
@@ -349,17 +490,21 @@ function SuccessStep({
   handle,
   displayName,
   amount,
+  rail,
   onClose,
 }: {
   handle: string;
   displayName: string | null;
   amount: number;
+  rail: PaymentRail;
   onClose: () => void;
 }) {
+  const isPrivate = rail === "private";
+
   return (
     <div className="p-8 text-center">
       <DialogHeader className="sr-only">
-        <DialogTitle>Payment sent privately</DialogTitle>
+        <DialogTitle>{isPrivate ? "Payment sent privately" : "Payment sent"}</DialogTitle>
       </DialogHeader>
 
       <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/30 mb-5 animate-in fade-in zoom-in-95 duration-300">
@@ -367,15 +512,15 @@ function SuccessStep({
       </div>
 
       <h3 className="font-serif text-3xl tracking-tight text-foreground leading-tight">
-        Paid. Privately.
+        {isPrivate ? "Paid. Privately." : "Paid."}
       </h3>
       <div className="mt-3">
         <AmountDisplay amount={amount} size="lg" className="text-foreground/90" />
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
         {displayName
-          ? `Sent to ${displayName}. Only ${handle} can see the amount.`
-          : `Sent privately. Only ${handle} can see the amount.`}
+          ? `Sent to ${displayName}.`
+          : `Sent to ${handle}.`}
       </p>
 
       <div className="mt-6 rounded-lg border border-border bg-surface-raised/40 p-3.5 text-left">
@@ -388,12 +533,14 @@ function SuccessStep({
               rcpt_4xKp…9wQz
             </p>
           </div>
-          <button
+          <Button
             type="button"
-            className="text-xs font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline shrink-0"
+            variant="link"
+            size="sm"
+            className="h-auto shrink-0 px-0 text-xs"
           >
             Download PDF
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -406,7 +553,7 @@ function SuccessStep({
           Save {handle}
         </Button>
         <Button
-          className="h-10 flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+          className="h-10 flex-1 rounded-lg hover:bg-primary/90"
           onClick={onClose}
         >
           Done

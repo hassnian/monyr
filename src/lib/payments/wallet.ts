@@ -1,12 +1,18 @@
-import { Wallet, WalletAccount } from "@wallet-standard/base";
+import type { Wallet, WalletAccount } from "@wallet-standard/base";
 
 import {
   SolanaSignMessage,
   type SolanaSignMessageFeature,
+  SolanaSignTransaction,
+  type SolanaSignTransactionFeature,
 } from "@solana/wallet-standard-features";
 
 type SolanaSignMessageWallet = Wallet & {
   features: Wallet["features"] & SolanaSignMessageFeature;
+};
+
+export type SolanaSignTransactionWallet = Wallet & {
+  features: Wallet["features"] & SolanaSignTransactionFeature;
 };
 
 function canSignMessage(
@@ -16,6 +22,16 @@ function canSignMessage(
   return (
     SolanaSignMessage in wallet.features &&
     account.features.includes(SolanaSignMessage)
+  );
+}
+
+export function canSignTransaction(
+  wallet: Wallet,
+  account: WalletAccount,
+): wallet is SolanaSignTransactionWallet {
+  return (
+    SolanaSignTransaction in wallet.features &&
+    account.features.includes(SolanaSignTransaction)
   );
 }
 

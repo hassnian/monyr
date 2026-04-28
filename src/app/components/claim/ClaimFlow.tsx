@@ -7,8 +7,6 @@ import Link from "next/link";
 import { useClaimFlow } from "@/app/hooks/useClaimFlow";
 import HandleClaimForm from "./ClaimForm";
 
-import { useWallet } from "@/app/contexts/wallet-context";
-
 import { ConnectWallets } from "../wallet/ConnectWallets";
 
 import { ArrowRight, Check, Copy } from "lucide-react";
@@ -17,7 +15,6 @@ import { cn } from "@/lib/utils";
 
 export function ClaimFlow() {
   const { step, goTo } = useClaimFlow();
-  const { connectedWallet } = useWallet();
   const [claimedHandle, setClaimedHandle] = useState("");
 
   const isClaimed = step === "claimed";
@@ -60,8 +57,7 @@ export function ClaimFlow() {
                 />
                 <div className="mt-6">
                   <HandleClaimForm
-                    address={connectedWallet?.account.address || ""}
-                      onClaimed={(h) => {
+                    onClaimed={(h) => {
                       console.log('claimed')
                       setClaimedHandle(h);
                       goTo("claimed");

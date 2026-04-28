@@ -1,9 +1,8 @@
 import {
-  createSignerFromWalletAccount,
   getUmbraClient,
   getUserAccountQuerierFunction,
   getUserRegistrationFunction,
-  getPublicBalanceToEncryptedBalanceDirectDepositorFunction
+  getPublicBalanceToEncryptedBalanceDirectDepositorFunction,
 } from "@umbra-privacy/sdk";
 import {
   type IUmbraClient,
@@ -16,16 +15,36 @@ import {
 } from "@umbra-privacy/web-zk-prover";
 import { useRef } from "react";
 import { useWallet } from "@/app/contexts/wallet-context";
-import { Address } from "@solana/kit";
+import {
+  address as toAddress,
+  getTransactionDecoder,
+  getTransactionEncoder,
+} from "@solana/kit";
+import {
+  SolanaSignMessage,
+  SolanaSignTransaction,
+} from "@solana/wallet-standard-features";
 import { nativeAmount } from "@/lib/payments/amount";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { U64 } from "@umbra-privacy/sdk/types";
+
+const isMainnet =
+  solanaPaymentConfig.chain === "solana:mainnet" ||
+  solanaPaymentConfig.chain === "solana:mainnet-beta";
 
 const UMBRA_CLIENT_CONFIG = {
-  network: "devnet" as const,
-  rpcUrl: "https://api.devnet.solana.com",
-  rpcSubscriptionsUrl: "wss://api.devnet.solana.com",
-  indexerApiEndpoint: "https://utxo-indexer.api-devnet.umbraprivacy.com",
+  network: isMainnet ? "mainnet" : "devnet",
+  rpcUrl: solanaPaymentConfig.rpcUrl,
+  rpcSubscriptionsUrl:
+    process.env.NEXT_PUBLIC_SOLANA_WS_URL ??
+    (isMainnet
+      ? "wss://api.mainnet-beta.solana.com"
+      : "wss://api.devnet.solana.com"),
+  indexerApiEndpoint: isMainnet
+    ? "https://utxo-indexer.api.umbraprivacy.com"
+    : "https://utxo-indexer.api-devnet.umbraprivacy.com",
   deferMasterSeedSignature: true,
-};
+} as const;
 
 type UmbraUserAccount = Awaited<
   ReturnType<ReturnType<typeof getUserAccountQuerierFunction>>
@@ -65,9 +84,77 @@ export function useUmbra() {
     return connectedWallet;
   }
 
-  function getConnectedSigner() {
+  function getConnectedSigner(): IUmbraSigner {
     const { wallet, account } = getRequiredConnectedWallet();
-    return createSignerFromWalletAccount(wallet, account);
+    const signTxFeature = wallet.features[SolanaSignTransaction] as
+      | {
+          signTransaction: (
+            ...inputs: Array<Record<string, unknown>>
+          ) => Promise<Array<{ signedTransaction: Uint8Array }>>;
+        }
+      | undefined;
+    const signMessageFeature = wallet.features[SolanaSignMessage] as
+      | {
+          signMessage: (
+            input: Record<string, unknown>,
+          ) => Promise<Array<{ signature: Uint8Array }>>;
+        }
+      | undefined;
+
+    if (!signTxFeature) {
+      throw new Error(
+        `${wallet.name} does not support ${SolanaSignTransaction}`,
+      );
+    }
+
+    if (!signMessageFeature) {
+      throw new Error(`${wallet.name} does not support ${SolanaSignMessage}`);
+    }
+
+    const encoder = getTransactionEncoder();
+    const decoder = getTransactionDecoder();
+
+    return {
+      address: toAddress(account.address),
+      async signTransaction(transaction) {
+        const [output] = await signTxFeature.signTransaction({
+          account,
+          chain: solanaPaymentConfig.chain,
+          transaction: encoder.encode(transaction),
+        });
+
+        return decoder.decode(output.signedTransaction) as Awaited<
+          ReturnType<IUmbraSigner["signTransaction"]>
+        >;
+      },
+      async signTransactions(transactions) {
+        const outputs = await signTxFeature.signTransaction(
+          ...transactions.map((transaction) => ({
+            account,
+            chain: solanaPaymentConfig.chain,
+            transaction: encoder.encode(transaction),
+          })),
+        );
+
+        return outputs.map((output) =>
+          decoder.decode(output.signedTransaction) as Awaited<
+            ReturnType<IUmbraSigner["signTransaction"]>
+          >,
+        );
+      },
+      async signMessage(message) {
+        const [output] = await signMessageFeature.signMessage({
+          account,
+          message,
+        });
+
+        return {
+          message,
+          signature: output.signature,
+          signer: toAddress(account.address),
+        } as Awaited<ReturnType<IUmbraSigner["signMessage"]>>;
+      },
+    };
   }
 
   async function getClient(signer: IUmbraSigner) {
@@ -86,7 +173,7 @@ export function useUmbra() {
 
   async function registerAccount({
     callbacks,
-    signer: providedSigner
+    signer: providedSigner,
   }: { callbacks?: UserRegistrationCallbacks; signer?: IUmbraSigner } = {}) {
     const signer = providedSigner ?? getConnectedSigner();
     const umbraClient = await getClient(signer);
@@ -138,22 +225,37 @@ export function useUmbra() {
     }
   }
 
-  async function depositAmount({ amount, address }:{amount: number, address: string}) {
-    // try {
-    //   const signer = getConnectedSigner();
-    //   const client= await getClient(signer);
-    //   const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({ client })
+  async function depositAmount({
+    amount,
+    address,
+  }: {
+    amount: number;
+    address: string;
+  }) {
+    try {
+      const signer = getConnectedSigner();
+      const client = await getClient(signer);
+      const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({
+        client,
+      });
+      const amountInBaseUnits = nativeAmount(
+        amount,
+        solanaPaymentConfig.tokenDecimals,
+      );
 
-    //   const USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address
-    //   const toNativeAmount  = toNativeAmount(amount, 6)
-
-    //   const result = await deposit(address as Address, USDC, toNativeAmount );
-
-    //   console.log("Queue signature:", result.queueSignature);
-    //   console.log("Callback signature:", result.callbackSignature);
-    // } catch (error) {
-    //   console.log('Somehting went wrong', error)
-    // }
+      return deposit(
+        toAddress(address),
+        solanaPaymentConfig.usdcMint,
+        amountInBaseUnits as U64,
+      );
+    } catch (error) {
+      console.error("Umbra deposit failed", {
+        error,
+        connectedAccountAddress: connectedWallet?.account.address,
+        connectedWalletName: connectedWallet?.wallet.name,
+      });
+      throw error;
+    }
   }
 
   return {

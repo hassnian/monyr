@@ -70,11 +70,10 @@ async function waitForVaultBalance(
 }
 
 type Props = {
-  address: string;
   onClaimed?: (handle: string) => void;
 };
 
-export default function HandleClaimForm({ address, onClaimed }: Props) {
+export default function HandleClaimForm({ onClaimed }: Props) {
   const availabilityCacheRef = useRef(new Map<string, boolean>());
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [setupStatus, setSetupStatus] = useState("Setting up privately…");
@@ -100,53 +99,53 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
       try {
         // User-visible wallet signature for vault encryption.
         setSubmitPhase("signing");
-        const wallet = await createEncryptedVault(handle)
+        const wallet = await createEncryptedVault()
 
         // Fund the vault and wait until the balance is confirmed on-chain.
-        setSubmitPhase("setup");
-        const sponsorResult = await sponsorVault(wallet.vaultPubkey)
+        // setSubmitPhase("setup");
+        // const sponsorResult = await sponsorVault(wallet.vaultPubkey)
 
-        await waitForVaultBalance(
-          wallet.vaultPubkey,
-          BigInt(sponsorResult.lamports),
-        )
+        // await waitForVaultBalance(
+        //   wallet.vaultPubkey,
+        //   BigInt(sponsorResult.lamports),
+        // )
 
         // Register the vault with Umbra using the sponsored vault signer.
-        const umbraSigner = createUmbraSignerFromKeyPair(wallet.keyPairSigner)
+        // const umbraSigner = createUmbraSignerFromKeyPair(wallet.keyPairSigner)
 
-        await registerUmbraAccount({
-          signer: umbraSigner,
-          callbacks: {
-            userAccountInitialisation: {
-              pre: async (tx) => {
-                setSetupStatus("Opening your private account…");
-                console.log("Creating account...");
-                console.log("Transaction:", tx);
-              },
-              post: async (_, sig) => {
-                console.log(`Account created: ${sig}`);
-              },
-            },
-            registerX25519PublicKey: {
-              pre: async () => {
-                setSetupStatus("Enabling encrypted balances…");
-                console.log("Registering X25519 key...");
-              },
-              post: async (_, sig) => {
-                console.log(`Encryption key registered: ${sig}`);
-              },
-            },
-            registerUserForAnonymousUsage: {
-              pre: async () => {
-                setSetupStatus("Turning on anonymous receiving…");
-                console.log("Registering for anonymous usage...");
-              },
-              post: async (_, sig) => {
-                console.log(`Anonymous registration complete: ${sig}`);
-              },
-            },
-          }
-        })
+        // await registerUmbraAccount({
+        //   signer: umbraSigner,
+        //   callbacks: {
+        //     userAccountInitialisation: {
+        //       pre: async (tx) => {
+        //         setSetupStatus("Opening your private account…");
+        //         console.log("Creating account...");
+        //         console.log("Transaction:", tx);
+        //       },
+        //       post: async (_, sig) => {
+        //         console.log(`Account created: ${sig}`);
+        //       },
+        //     },
+        //     registerX25519PublicKey: {
+        //       pre: async () => {
+        //         setSetupStatus("Enabling encrypted balances…");
+        //         console.log("Registering X25519 key...");
+        //       },
+        //       post: async (_, sig) => {
+        //         console.log(`Encryption key registered: ${sig}`);
+        //       },
+        //     },
+        //     registerUserForAnonymousUsage: {
+        //       pre: async () => {
+        //         setSetupStatus("Turning on anonymous receiving…");
+        //         console.log("Registering for anonymous usage...");
+        //       },
+        //       post: async (_, sig) => {
+        //         console.log(`Anonymous registration complete: ${sig}`);
+        //       },
+        //     },
+        //   }
+        // })
 
         // Publish the handle record after private setup completes.
         setSubmitPhase("publishing");
@@ -154,6 +153,7 @@ export default function HandleClaimForm({ address, onClaimed }: Props) {
           handle,
           vaultPubkey: wallet.vaultPubkey,
           encryptedVaultSecret: wallet.encryptedVaultSecret,
+          ownerWalletAddress: wallet.ownerWalletAddress,
           displayName: value.displayName.trim() || undefined,
           bio: value.bio.trim() || undefined,
         });

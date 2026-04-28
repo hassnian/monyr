@@ -1,37 +1,90 @@
 {
-  "id": "ce95053a-91de-40f8-9f75-d98fef939b43",
+  "id": "483077b8-218d-479a-93c3-6f3f1366cdb6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.todo": {
-      "name": "todo",
+    "public.handles": {
+      "name": "handles",
       "schema": "",
       "columns": {
         "id": {
           "name": "id",
-          "type": "integer",
+          "type": "uuid",
           "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "handle": {
+          "name": "handle",
+          "type": "varchar(20)",
+          "primaryKey": false,
           "notNull": true
         },
-        "text": {
-          "name": "text",
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vault_pubkey": {
+          "name": "vault_pubkey",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "done": {
-          "name": "done",
-          "type": "boolean",
+        "encrypted_vault_secret": {
+          "name": "encrypted_vault_secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "handles_handle_unique": {
+          "name": "handles_handle_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "handle"
+          ]
+        },
+        "handles_vault_pubkey_unique": {
+          "name": "handles_vault_pubkey_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "vault_pubkey"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

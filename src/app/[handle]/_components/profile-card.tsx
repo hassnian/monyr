@@ -37,7 +37,8 @@ export function ProfileCard({
   bio,
   subPath,
   variant,
-  ownerPubkey
+  vaultPubkey,
+  umbraStatus,
 }: Props) {
   const presets = variant.kind === "tipjar" ? (variant.presets ?? DEFAULT_PRESETS) : [];
   const isInvoice = variant.kind === "invoice";
@@ -213,7 +214,8 @@ export function ProfileCard({
         open={openConfirmationModal}
         onOpenChange={setConfirmationModalOpen}
         handle={handle}
-        ownerPubkey={ownerPubkey}
+        vaultPubkey={vaultPubkey}
+        umbraStatus={umbraStatus}
         displayName={displayName}
         amount={numericAmount}
         memo={memo || undefined}
