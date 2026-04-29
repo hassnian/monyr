@@ -43,12 +43,12 @@ export default async function HandleProfilePage({
         bio={profile.bio}
         variant={{ kind: "tipjar" }}
       />
-      <FooterNote handle={profile.handle} />
+      <FooterNote />
     </PageFrame>
   );
 }
 
-function FooterNote({ handle }: { handle: string }) {
+function FooterNote() {
   return (
     <p className="relative z-10 mt-8 text-center text-[11px] text-muted-foreground/80 max-w-sm">
       Want your own payment profile?{" "}
@@ -58,7 +58,6 @@ function FooterNote({ handle }: { handle: string }) {
       >
         Claim your handle
       </Link>
-      . Pay {handle} privately.
     </p>
   );
 }
