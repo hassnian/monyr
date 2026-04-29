@@ -69,21 +69,21 @@ export function WalletConnectButton() {
     }
   }, [address]);
 
-  const disconnect = useCallback(async () => {
+  const disconnect = useCallback(() => {
     if (!connectedWallet) return;
+
+    const wallet = connectedWallet.wallet;
+    const disconnectFeature = (wallet as WalletWithFeatures<StandardDisconnectFeature>)
+      .features[StandardDisconnect];
+
     setIsDisconnecting(true);
-    try {
-      const disconnectFeature = (
-        connectedWallet.wallet as WalletWithFeatures<StandardDisconnectFeature>
-      ).features[StandardDisconnect];
-      await disconnectFeature?.disconnect();
-    } catch (error) {
+    setMenuOpen(false);
+    setConnectedWallet(null);
+    setIsDisconnecting(false);
+
+    void disconnectFeature?.disconnect().catch((error) => {
       console.error("Failed to disconnect wallet", error);
-    } finally {
-      setConnectedWallet(null);
-      setIsDisconnecting(false);
-      setMenuOpen(false);
-    }
+    });
   }, [connectedWallet, setConnectedWallet]);
 
   if (!connectedWallet) {
@@ -243,7 +243,7 @@ export function WalletConnectButton() {
             disabled={isDisconnecting}
             role="menuitem"
             className={cn(
-              "group flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px]",
+              "group flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left text-[13px]",
               "text-muted-foreground transition-colors",
               "hover:bg-destructive/10 hover:text-destructive",
               "focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-none",

@@ -10,6 +10,7 @@ import {
   StandardEvents,
   type StandardEventsFeature,
 } from "@wallet-standard/features";
+import { logout } from "@/app/actions/auth";
 
 export interface ConnectedWallet {
   account: WalletAccount;
@@ -77,6 +78,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const setConnectedWallet = useCallback((next: ConnectedWallet | null) => {
     setConnectedWalletState(next);
     persistWalletName(next?.wallet.name ?? null);
+
+    if (!next) {
+      void logout();
+    }
   }, []);
 
   // Auto-reconnect to the previously-used wallet on mount.
@@ -156,8 +161,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (!changes.accounts) return;
       const next = changes.accounts[0];
       if (!next) {
-        setConnectedWalletState(null);
-        persistWalletName(null);
+        setConnectedWallet(null);
       } else if (next.address !== connectedWallet.account.address) {
         setConnectedWalletState({
           account: next,
@@ -169,7 +173,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return () => {
       off();
     };
-  }, [connectedWallet]);
+  }, [connectedWallet, setConnectedWallet]);
 
   const value = useMemo<WalletContextType>(
     () => ({
