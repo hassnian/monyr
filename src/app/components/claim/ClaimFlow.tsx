@@ -3,19 +3,30 @@
 import { handleUrl } from "@/lib/brand";
 import { useState } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { useClaimFlow } from "@/app/hooks/useClaimFlow";
+import { useAuth } from "@/app/contexts/auth-context";
 import HandleClaimForm from "./ClaimForm";
 
 import { ConnectWallets } from "../wallet/ConnectWallets";
 
-import { ArrowRight, Check, Copy } from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 export function ClaimFlow() {
   const { step, goTo } = useClaimFlow();
+  const { isConnected, isUserLoading, user } = useAuth();
   const [claimedHandle, setClaimedHandle] = useState("");
+
+  if (user) {
+    redirect("/app");
+  }
+
+  if (isConnected && isUserLoading) {
+    return <ClaimLoading />;
+  }
 
   const isClaimed = step === "claimed";
 
@@ -58,7 +69,6 @@ export function ClaimFlow() {
                 <div className="mt-6">
                   <HandleClaimForm
                     onClaimed={(h) => {
-                      console.log('claimed')
                       setClaimedHandle(h);
                       goTo("claimed");
                     }}
@@ -80,6 +90,17 @@ export function ClaimFlow() {
           </p>
         </>
       )}
+    </section>
+  );
+}
+
+function ClaimLoading() {
+  return (
+    <section className="relative flex min-h-[360px] w-full max-w-lg flex-col items-center justify-center gap-3 text-center">
+      <Loader2 className="size-5 animate-spin text-primary" />
+      <p className="font-serif italic text-[14px] text-muted-foreground/80">
+        Checking your handle…
+      </p>
     </section>
   );
 }

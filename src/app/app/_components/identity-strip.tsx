@@ -3,26 +3,34 @@
 import { handleUrl } from "@/lib/brand";
 import { useState } from "react";
 
-import { Copy, Check, ExternalLink, Share2 } from "lucide-react";
+import { Copy, Check, ExternalLink, Share2, ShieldCheck, Sparkles } from "lucide-react";
 
 import { GradientAvatar } from "@/components/payments/gradient-avatar";
-
 import { HandleText } from "@/components/payments/handle-text";
 
 import { cn } from "@/lib/utils";
-import type { Profile } from "../_data";
+
+import type { AuthUser } from "@/app/contexts/auth-context";
+import { ActivatePrivatePaymentsDialog } from "./activate-private-payments-dialog";
 
 type Props = {
-  profile: Profile;
+  user: AuthUser;
+  onActivated?: () => void | Promise<void>;
 };
 
 /**
  * Editorial masthead for the dashboard — large gradient avatar, serif display
- * name, and a copy-the-URL affordance that reads like a print colophon.
+ * name, and a copy-the-URL affordance that reads like a print colophon. When
+ * the account hasn't activated private payments yet, the activation CTA is
+ * the headline action of this region.
  */
-export function IdentityStrip({ profile }: Props) {
-  const url = handleUrl(profile.handle);
+export function IdentityStrip({ user, onActivated }: Props) {
+  const url = handleUrl(user.handle);
   const [copied, setCopied] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
+
+  const isActive = user.umbraStatus === "active";
+  const displayName = user.displayName?.trim() || user.handle;
 
   function copy() {
     try {
@@ -30,15 +38,12 @@ export function IdentityStrip({ profile }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* clipboard may be blocked in some contexts — ignore for mock. */
+      /* clipboard may be blocked in some contexts — ignore. */
     }
   }
 
   return (
-    <section
-      aria-labelledby="dashboard-name"
-      className="relative"
-    >
+    <section aria-labelledby="dashboard-name" className="relative">
       {/* Soft candlelight behind the identity — once, not stacked with other glows. */}
       <div
         aria-hidden
@@ -50,20 +55,21 @@ export function IdentityStrip({ profile }: Props) {
       />
       <div className="flex flex-col gap-7 md:flex-row md:items-end md:justify-between md:gap-10">
         <div className="flex items-start gap-5">
-          <GradientAvatar handle={profile.handle} size={84} />
+          <GradientAvatar handle={user.handle} size={84} />
           <div className="min-w-0 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/80">
+            <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/80">
               Your private workspace
+              <UmbraStatusPill status={user.umbraStatus} />
             </p>
             <h1
               id="dashboard-name"
               className="font-serif text-4xl leading-[1.04] tracking-tight text-foreground md:text-5xl"
             >
-              {profile.displayName}
+              {displayName}
             </h1>
             <div className="pt-1">
               <HandleText
-                handle={profile.handle}
+                handle={user.handle}
                 size="md"
                 className="text-muted-foreground/85"
               />
@@ -71,7 +77,25 @@ export function IdentityStrip({ profile }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {!isActive && (
+            <button
+              type="button"
+              onClick={() => setActivateOpen(true)}
+              className={cn(
+                "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-[13px] font-semibold",
+                "bg-primary text-primary-foreground hover:bg-primary/90",
+                "ring-1 ring-primary/30 transition-all active:translate-y-px",
+                "shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)]",
+                "hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]",
+                "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              )}
+            >
+              <Sparkles className="size-3.5" strokeWidth={2.25} />
+              Activate private payments
+            </button>
+          )}
+
           <button
             type="button"
             onClick={copy}
@@ -86,10 +110,7 @@ export function IdentityStrip({ profile }: Props) {
             <span className="font-mono tabular text-[12.5px] text-foreground/90">
               {url}
             </span>
-            <span
-              aria-hidden
-              className="h-4 w-px bg-border"
-            />
+            <span aria-hidden className="h-4 w-px bg-border" />
             {copied ? (
               <span className="inline-flex items-center gap-1 text-primary">
                 <Check className="size-3.5" strokeWidth={2.5} />
@@ -104,7 +125,7 @@ export function IdentityStrip({ profile }: Props) {
           </button>
 
           <IconAction
-            href={`/@${profile.handle}`}
+            href={`/@${user.handle}`}
             label="Open profile"
             icon={<ExternalLink className="size-4" />}
           />
@@ -114,7 +135,49 @@ export function IdentityStrip({ profile }: Props) {
           />
         </div>
       </div>
+
+      <ActivatePrivatePaymentsDialog
+        open={activateOpen}
+        onOpenChange={setActivateOpen}
+        user={user}
+        onActivated={async () => {
+          await onActivated?.();
+        }}
+      />
     </section>
+  );
+}
+
+function UmbraStatusPill({ status }: { status: AuthUser["umbraStatus"] }) {
+  if (status === "active") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-success">
+        <ShieldCheck className="size-3" strokeWidth={2.25} />
+        Private
+      </span>
+    );
+  }
+
+  if (status === "activating") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning">
+        Activating…
+      </span>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-destructive">
+        Activation failed
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised/40 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground/90">
+      Not yet activated
+    </span>
   );
 }
 
@@ -135,7 +198,13 @@ function IconAction({
   );
   if (href) {
     return (
-      <a href={href} aria-label={label} className={className} target="_blank" rel="noreferrer">
+      <a
+        href={href}
+        aria-label={label}
+        className={className}
+        target="_blank"
+        rel="noreferrer"
+      >
         {icon}
       </a>
     );

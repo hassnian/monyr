@@ -1,9 +1,4 @@
-import { TopBar } from "./_components/top-bar";
-import { IdentityStrip } from "./_components/identity-strip";
-import { MetricsBand } from "./_components/metrics-band";
-import { QuickActions } from "./_components/quick-actions";
-import { DashboardTabs } from "./_components/dashboard";
-import { profile } from "./_data";
+import { DashboardShell } from "./_components/dashboard-shell";
 
 export const metadata = {
   title: "Monyr — Dashboard",
@@ -39,27 +34,7 @@ export default function DashboardPage() {
         @
       </span>
 
-      <TopBar handle={profile.handle} />
-
-      <main className="relative z-10 mx-auto w-full max-w-7xl px-6 pb-24 pt-10 md:px-10 md:pt-12">
-        <div className="flex flex-col gap-10">
-          <IdentityStrip profile={profile} />
-          <MetricsBand />
-          <QuickActions />
-          <div className="h-px w-full bg-border/60" />
-          <DashboardTabs />
-        </div>
-
-        <footer className="mt-20 flex flex-wrap items-center justify-between gap-4 border-t border-border/60 pt-6 text-[12px] text-muted-foreground/70">
-          <p className="font-serif italic">
-            Non-custodial. Amounts, memos, and senders stay off the public
-            ledger.
-          </p>
-          <p className="font-mono tabular text-[11px] uppercase tracking-[0.2em]">
-            Monyr v0.1 · Solana mainnet
-          </p>
-        </footer>
-      </main>
+      <DashboardShell />
     </div>
   );
 }

@@ -21,9 +21,9 @@ import { cn } from "@/lib/utils";
 import { addHandle, hadnleExists as handleExists } from "@/app/actions/handles";
 import { useRef, useState } from "react";
 import { useVault } from "@/app/hooks/useVault";
-import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
-import { useUmbra } from "@/app/hooks/useUmbra";
-import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
+// import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
+// import { useUmbra } from "@/app/hooks/useUmbra";
+// import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 
 const schema = z.object({
   handle: z
@@ -45,29 +45,28 @@ const isValidHandleFormat = (value: string) =>
 
 type SubmitPhase = "idle" | "signing" | "setup" | "publishing";
 
-const delay = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
+// import { delay } from "@/lib/delay";
 
-async function waitForVaultBalance(
-  vaultPubkey: string,
-  minimumLamports: bigint,
-  timeoutMs = 30_000,
-) {
-  const startedAt = Date.now();
+// async function waitForVaultBalance(
+//   vaultPubkey: string,
+//   minimumLamports: bigint,
+//   timeoutMs = 30_000,
+// ) {
+//   const startedAt = Date.now();
 
-  while (Date.now() - startedAt < timeoutMs) {
-    const balance = await getVaultBalance(vaultPubkey);
-    const lamports = BigInt(balance.lamports);
+//   while (Date.now() - startedAt < timeoutMs) {
+//     const balance = await getVaultBalance(vaultPubkey);
+//     const lamports = BigInt(balance.lamports);
 
-    if (lamports >= minimumLamports) {
-      return lamports;
-    }
+//     if (lamports >= minimumLamports) {
+//       return lamports;
+//     }
 
-    await delay(1_000);
-  }
+//     await delay(1_000);
+//   }
 
-  throw new Error("Timed out waiting for vault funding");
-}
+//   throw new Error("Timed out waiting for vault funding");
+// }
 
 type Props = {
   onClaimed?: (handle: string) => void;
@@ -79,7 +78,7 @@ export default function HandleClaimForm({ onClaimed }: Props) {
   const [setupStatus, setSetupStatus] = useState("Setting up privately…");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { createEncryptedVault } = useVault()
-  const { registerAccount: registerUmbraAccount } = useUmbra()
+  // const { registerAccount: registerUmbraAccount } = useUmbra()
 
   const form = useForm({
     defaultValues: {

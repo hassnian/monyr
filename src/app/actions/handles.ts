@@ -82,6 +82,7 @@ export async function getHandle(handle: string) {
 
 export async function getHandlesByOwnerWallet(ownerWalletAddress: string) {
   try {
+    console.log('getHandlesByOwnerWallet', ownerWalletAddress)
     return await db.select({
       handle: handles.handle,
       displayName: handles.display_name,
