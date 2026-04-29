@@ -12,7 +12,9 @@ import { useQuery } from "@tanstack/react-query";
 import type { KeyPairSigner } from "@solana/kit";
 
 import { useWallet } from "./wallet-context";
-import { getHandlesByOwnerWallet, type UmbraStatus } from "@/app/actions/handles";
+import { createLoginChallenge, getCurrentWalletSession, verifyLoginSignature } from "@/app/actions/auth";
+import { getMyHandles, type UmbraStatus } from "@/app/actions/handles";
+import { signMessage } from "@/lib/payments/wallet";
 
 export type AuthUser = {
   handle: string;
@@ -40,6 +42,32 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+type ConnectedWalletForSession = NonNullable<ReturnType<typeof useWallet>["connectedWallet"]>;
+
+function bytesToBase64(bytes: Uint8Array) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+async function ensureWalletSession(connectedWallet: ConnectedWalletForSession) {
+  const walletAddress = connectedWallet.account.address;
+  const currentSession = await getCurrentWalletSession();
+
+  if (currentSession?.walletAddress === walletAddress) return;
+
+  const { message } = await createLoginChallenge(walletAddress);
+  const signature = await signMessage({
+    wallet: connectedWallet.wallet,
+    account: connectedWallet.account,
+    text: message,
+  });
+
+  await verifyLoginSignature({
+    walletAddress,
+    message,
+    signature: bytesToBase64(signature),
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { connectedWallet, isConnected } = useWallet();
   const walletAddress = connectedWallet?.account.address ?? null;
@@ -66,17 +94,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const { data, isLoading, refetch } = useQuery({
-    enabled: Boolean(walletAddress),
-    queryKey: ["auth", "handles-by-owner", walletAddress],
+    enabled: Boolean(connectedWallet),
+    queryKey: ["auth", "my-handles", walletAddress],
     queryFn: async () => {
-      if (!walletAddress) return [];
-      const x = await getHandlesByOwnerWallet(walletAddress);
-
-      console.log('getHandlesByOwnerWallet', x)
-
-      return x
+      if (!connectedWallet) return [];
+      await ensureWalletSession(connectedWallet);
+      return getMyHandles();
     },
     staleTime: 30_000,
+    retry: false,
   });
 
   const user: AuthUser | null = useMemo(() => {

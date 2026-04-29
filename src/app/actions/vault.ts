@@ -20,6 +20,11 @@ import {
   signTransactionMessageWithSigners,
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
+import { and, eq } from "drizzle-orm";
+import { getDb } from "@/db/drizzle";
+import { handles } from "@/db/schema";
+import { getOwnerWalletLookup } from "@/lib/auth/owner-wallet";
+import { requireWalletSession } from "@/lib/auth/session";
 
 async function sendSol(to: string, amountLamports: bigint) {
   const secretKey = bs58.decode(process.env.SOLANA_SECRET_KEY_BASE58!);
@@ -71,13 +76,25 @@ export async function getVaultBalance(vaultAddress: string) {
 }
 
 export async function sponsorVault(vaultAddress: string) {
-  // const rpc = createSolanaRpc(process.env.SOLANA_RPC_URL!);
-
-  // const rentExemptMinimum  = await rpc.getMinimumBalanceForRentExemption(0n).send();
-
+  const session = await requireWalletSession();
   const VAULT_SPONSOR_LAMPORTS = 50_000_000n; // 0.05 SOL
 
-  // const buffer = 10_000n;
+  const ownedVault = await getDb().select({ id: handles.id })
+    .from(handles)
+    .where(and(
+      eq(handles.vault_pubkey, vaultAddress),
+      eq(handles.owner_wallet_lookup, getOwnerWalletLookup(session.walletAddress)),
+    ))
+    .limit(1);
+
+  if (!ownedVault[0]) {
+    throw new Error("Unauthorized");
+  }
+
+  const balance = await getVaultBalance(vaultAddress);
+  if (BigInt(balance.lamports) >= VAULT_SPONSOR_LAMPORTS) {
+    return { signature: null, lamports: "0" };
+  }
 
   return sendSol(vaultAddress, VAULT_SPONSOR_LAMPORTS);
 }

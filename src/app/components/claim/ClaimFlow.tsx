@@ -1,7 +1,7 @@
 "use client";
 
 import { handleUrl } from "@/lib/brand";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -19,6 +19,12 @@ export function ClaimFlow() {
   const { step, goTo } = useClaimFlow();
   const { isConnected, isUserLoading, user } = useAuth();
   const [claimedHandle, setClaimedHandle] = useState("");
+
+  useEffect(() => {
+    if (isConnected && !isUserLoading && !user && step === "connect-wallet") {
+      goTo("claim-handle");
+    }
+  }, [goTo, isConnected, isUserLoading, step, user]);
 
   if (user) {
     redirect("/app");
