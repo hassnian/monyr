@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { addHandle, hadnleExists as handleExists } from "@/app/actions/handles";
 import { useRef, useState } from "react";
 import { useVault } from "@/app/hooks/useVault";
+import { useAuth } from "@/app/contexts/auth-context";
 // import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
 // import { useUmbra } from "@/app/hooks/useUmbra";
 // import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
@@ -78,6 +79,7 @@ export default function HandleClaimForm({ onClaimed }: Props) {
   const [setupStatus, setSetupStatus] = useState("Setting up privately…");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { createEncryptedVault } = useVault()
+  const { refreshUser } = useAuth();
   // const { registerAccount: registerUmbraAccount } = useUmbra()
 
   const form = useForm({
@@ -148,13 +150,19 @@ export default function HandleClaimForm({ onClaimed }: Props) {
 
         // Publish the handle record after private setup completes.
         setSubmitPhase("publishing");
-        await addHandle({
+        const added = await addHandle({
           handle,
           vaultPubkey: wallet.vaultPubkey,
           encryptedVaultSecret: wallet.encryptedVaultSecret,
           displayName: value.displayName.trim() || undefined,
           bio: value.bio.trim() || undefined,
         });
+
+        if (!added) {
+          throw new Error("Failed to publish handle");
+        }
+
+        await refreshUser();
 
         setSubmitPhase("idle");
         onClaimed?.(handle);

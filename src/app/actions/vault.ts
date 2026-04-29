@@ -25,6 +25,7 @@ import { getDb } from "@/db/drizzle";
 import { handles } from "@/db/schema";
 import { getOwnerWalletLookup } from "@/lib/auth/owner-wallet";
 import { requireWalletSession } from "@/lib/auth/session";
+import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
 
 async function sendSol(to: string, amountLamports: bigint) {
   const secretKey = bs58.decode(process.env.SOLANA_SECRET_KEY_BASE58!);
@@ -77,7 +78,6 @@ export async function getVaultBalance(vaultAddress: string) {
 
 export async function sponsorVault(vaultAddress: string) {
   const session = await requireWalletSession();
-  const VAULT_SPONSOR_LAMPORTS = 50_000_000n; // 0.05 SOL
 
   const ownedVault = await getDb().select({ id: handles.id })
     .from(handles)

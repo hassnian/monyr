@@ -1,0 +1,1 @@
+export const VAULT_SPONSOR_LAMPORTS = 8_000_000n; // 0.008 SOL

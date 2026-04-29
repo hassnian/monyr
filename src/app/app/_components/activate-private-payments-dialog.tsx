@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ShieldCheck, Check, Sparkles, KeyRound, Coins, Clock3 } from "lucide-react";
+import { Loader2, ShieldCheck, Check, Sparkles, KeyRound, Coins, Clock3, ArrowUpRight } from "lucide-react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 
 import {
@@ -18,6 +18,7 @@ import { useAuth, type AuthUser, type UnlockedVault } from "@/app/contexts/auth-
 import { useVault } from "@/app/hooks/useVault";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
+import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
 import { setUmbraStatus } from "@/app/actions/handles";
 
 type StepKey =
@@ -28,7 +29,6 @@ type StepKey =
   | "registerUserForAnonymousUsage"
   | "finalize";
 
-const SPONSOR_MIN_LAMPORTS = 50_000_000n; // 0.05 SOL — matches sponsorVault().
 
 const STATUS_COPY: Record<StepKey, string> = {
   unlock: "Asking your wallet for permission…",
@@ -108,7 +108,7 @@ export function ActivatePrivatePaymentsDialog({
     const balance = await getVaultBalance(vaultPubkey);
     const lamports = BigInt(balance.lamports);
 
-    if (lamports >= SPONSOR_MIN_LAMPORTS) return;
+    if (lamports >= VAULT_SPONSOR_LAMPORTS) return;
 
     const result = await sponsorVault(vaultPubkey);
     await waitForVaultBalance(vaultPubkey, BigInt(result.lamports));
@@ -257,9 +257,27 @@ export function ActivatePrivatePaymentsDialog({
               )}
             </Button>
 
-            <p className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/80">
-              <ShieldCheck className="size-3" />
-              Non-custodial. Monyr never holds your keys.
+            <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12px] leading-snug text-muted-foreground/85">
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="size-3.5" strokeWidth={2} />
+                Non-custodial. Monyr never holds your keys.
+              </span>
+              <span aria-hidden className="hidden size-1 rounded-full bg-border-strong sm:inline-block" />
+              <a
+                href="https://umbraprivacy.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="group/umbra inline-flex items-center gap-1 text-foreground/90 transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+              >
+                Powered by{" "}
+                <span className="font-serif italic underline underline-offset-4 decoration-primary/45 transition-colors group-hover/umbra:decoration-primary">
+                  Umbra
+                </span>
+                <ArrowUpRight
+                  className="size-3 text-muted-foreground/80 transition-colors group-hover/umbra:text-primary"
+                  strokeWidth={2}
+                />
+              </a>
             </p>
           </div>
         </div>

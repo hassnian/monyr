@@ -26,7 +26,7 @@ export function ClaimFlow() {
     }
   }, [goTo, isConnected, isUserLoading, step, user]);
 
-  if (user) {
+  if (user && step === "connect-wallet") {
     redirect("/app");
   }
 
