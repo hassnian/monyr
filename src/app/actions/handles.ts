@@ -1,7 +1,7 @@
 "use server";
 
 import { createHmac } from "node:crypto";
-import { db } from "@/db/drizzle";
+import { getDb } from "@/db/drizzle";
 import { handles, umbraStatusEnum } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -41,7 +41,7 @@ export async function addHandle({
     displayName?: string
 }) {
   try {
-    await db.insert(handles).values({
+    await getDb().insert(handles).values({
       handle,
       vault_pubkey: vaultPubkey,
       encrypted_vault_secret: encryptedVaultSecret,
@@ -58,13 +58,13 @@ export async function addHandle({
 }
 
 export async function hadnleExists(handle: string) {
-  return Boolean((await db.select().from(handles).where(eq(handles.handle, handle))).length)
+  return Boolean((await getDb().select().from(handles).where(eq(handles.handle, handle))).length)
 }
 
 
 export async function getHandle(handle: string) {
   try {
-    const values = await db.select({
+    const values = await getDb().select({
       handle: handles.handle,
       displayName: handles.display_name,
       vaultPubkey: handles.vault_pubkey,
@@ -83,7 +83,7 @@ export async function getHandle(handle: string) {
 export async function getHandlesByOwnerWallet(ownerWalletAddress: string) {
   try {
     console.log('getHandlesByOwnerWallet', ownerWalletAddress)
-    return await db.select({
+    return await getDb().select({
       handle: handles.handle,
       displayName: handles.display_name,
       vaultPubkey: handles.vault_pubkey,
@@ -101,7 +101,7 @@ export async function setUmbraStatus(handle: string, status: UmbraStatus) {
   assertUmbraStatus(status);
 
   try {
-    await db.update(handles)
+    await getDb().update(handles)
       .set({
         umbra_status: status,
         updated_at: new Date(),
