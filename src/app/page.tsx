@@ -1,10 +1,9 @@
 import { handleUrl } from "@/lib/brand";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { LandingProfilePreview } from "@/components/payments/landing-profile-preview";
 import { SolanaMark } from "@/components/payments/solana-mark";
-import { cn } from "@/lib/utils";
 import { LandingNav } from "./_components/landing/landing-nav";
+import { HeroPrimaryCta } from "./_components/landing/hero-primary-cta";
 import { SectionLeak } from "./_components/landing/section-leak";
 import { SectionWhat } from "./_components/landing/section-what";
 import { SectionHow } from "./_components/landing/section-how";
@@ -90,20 +89,7 @@ function HeroCopy() {
       </p>
 
       <div className="mt-9 flex flex-wrap items-center gap-3">
-        <Link
-          href="/claim"
-          className={cn(
-            "inline-flex h-12 items-center justify-center rounded-xl px-6 text-base font-semibold",
-            "bg-primary text-primary-foreground hover:bg-primary/90",
-            "ring-1 ring-primary/30 transition-all",
-            "shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)]",
-            "hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]",
-            "active:translate-y-px",
-          )}
-        >
-          Claim your handle
-          <ArrowRight className="ml-1.5 size-4" />
-        </Link>
+        <HeroPrimaryCta />
         <Link
           href="#how"
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl px-5 text-[14px] font-medium text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
