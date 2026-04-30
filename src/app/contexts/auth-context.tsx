@@ -69,7 +69,7 @@ async function ensureWalletSession(connectedWallet: ConnectedWalletForSession) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { connectedWallet, isConnected } = useWallet();
+  const { connectedWallet, disconnectWallet, isConnected } = useWallet();
   const walletAddress = connectedWallet?.account.address ?? null;
 
   // Cache the in-memory vault keypair alongside the wallet it was unlocked
@@ -98,7 +98,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: ["auth", "my-handles", walletAddress],
     queryFn: async () => {
       if (!connectedWallet) return [];
-      await ensureWalletSession(connectedWallet);
+
+      try {
+        await ensureWalletSession(connectedWallet);
+      } catch (error) {
+        await disconnectWallet();
+        throw error;
+      }
+
       return getMyHandles();
     },
     staleTime: 30_000,

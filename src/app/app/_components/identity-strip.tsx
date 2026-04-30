@@ -96,6 +96,7 @@ export function IdentityStrip({ user, onActivated }: Props) {
             </button>
           )}
 
+
           <button
             type="button"
             onClick={copy}
@@ -154,22 +155,6 @@ function UmbraStatusPill({ status }: { status: AuthUser["umbraStatus"] }) {
       <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-success">
         <ShieldCheck className="size-3" strokeWidth={2.25} />
         Private
-      </span>
-    );
-  }
-
-  if (status === "activating") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning">
-        Activating…
-      </span>
-    );
-  }
-
-  if (status === "failed") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-destructive">
-        Activation failed
       </span>
     );
   }

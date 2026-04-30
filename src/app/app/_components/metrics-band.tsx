@@ -51,7 +51,7 @@ export function MetricsBand() {
           className="md:col-span-3"
           label="Total received (private)"
           eyebrow={
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
               <ShieldCheck className="size-3 text-success" strokeWidth={2.25} />
               Only you can decrypt
             </span>
@@ -72,10 +72,10 @@ export function MetricsBand() {
             </div>
             <Delta value={metrics.monthOverMonthDelta} />
           </div>
-          <div className="mt-4 -mx-1 text-foreground/60">
-            <ActivitySpark data={dailyFlow} height={68} />
+          <div className="mt-3 -mx-1 text-foreground/60">
+            <ActivitySpark data={dailyFlow} height={44} />
           </div>
-          <div className="mt-2 flex justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">
+          <div className="mt-1.5 flex justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">
             <span>Mar 25</span>
             <span>Apr 24</span>
           </div>
@@ -86,7 +86,7 @@ export function MetricsBand() {
           className="md:col-span-1"
           label="This month"
           eyebrow={
-            <span className="text-[11px] text-muted-foreground/80">
+            <span className="whitespace-nowrap text-[11px] text-muted-foreground/80">
               April · to date
             </span>
           }
@@ -102,7 +102,7 @@ export function MetricsBand() {
           className="md:col-span-1"
           label="Pending"
           eyebrow={
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
               <Clock className="size-3" strokeWidth={2.25} />
               Auto-claiming
             </span>
@@ -119,7 +119,7 @@ export function MetricsBand() {
           className="md:col-span-1"
           label="Active links"
           eyebrow={
-            <span className="text-[11px] text-muted-foreground/80">
+            <span className="whitespace-nowrap text-[11px] text-muted-foreground/80">
               one-off sends
             </span>
           }
@@ -150,19 +150,24 @@ function Tile({
   return (
     <div
       className={cn(
-        "relative flex min-h-[148px] flex-col justify-between rounded-xl border border-border bg-card/80 p-5",
+        "relative flex min-h-[148px] flex-col rounded-xl border border-border bg-card/80 p-5",
         // Inset catch-light + soft drop
         "shadow-[0_1px_0_0_rgba(255,255,255,0.025)_inset,0_24px_48px_-32px_rgba(0,0,0,0.5)]",
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
         {eyebrow}
       </div>
-      <div className="mt-4">{children}</div>
+      {/* Content sits flush against the bottom — header pinned up top, the
+          number anchors down the page so the empty space lives between them
+          as deliberate breathing room, not a hollow tail. */}
+      <div className="flex flex-1 flex-col justify-end pt-5">
+        {children}
+      </div>
     </div>
   );
 }

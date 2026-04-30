@@ -7,6 +7,8 @@ import { getWallets } from "@wallet-standard/app";
 import {
   StandardConnect,
   type StandardConnectFeature,
+  StandardDisconnect,
+  type StandardDisconnectFeature,
   StandardEvents,
   type StandardEventsFeature,
 } from "@wallet-standard/features";
@@ -22,6 +24,7 @@ interface WalletContextType {
   wallet: Wallet | null;
   connectedWallet: ConnectedWallet | null;
   setConnectedWallet: (wallet: ConnectedWallet | null) => void;
+  disconnectWallet: () => Promise<void>;
   isConnected: boolean;
   /** True while we're trying to silently restore a previous session. */
   isReconnecting: boolean;
@@ -83,6 +86,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       void logout();
     }
   }, []);
+
+  const disconnectWallet = useCallback(async () => {
+    const wallet = connectedWallet?.wallet;
+
+    setConnectedWallet(null);
+
+    const disconnectFeature = (wallet as WalletWithFeatures<StandardDisconnectFeature> | undefined)
+      ?.features[StandardDisconnect];
+
+    try {
+      await disconnectFeature?.disconnect();
+    } catch (error) {
+      console.error("Failed to disconnect wallet", error);
+    }
+  }, [connectedWallet, setConnectedWallet]);
 
   // Auto-reconnect to the previously-used wallet on mount.
   useEffect(() => {
@@ -182,9 +200,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnected: Boolean(connectedWallet),
       connectedWallet,
       setConnectedWallet,
+      disconnectWallet,
       isReconnecting,
     }),
-    [connectedWallet, setConnectedWallet, isReconnecting],
+    [connectedWallet, setConnectedWallet, disconnectWallet, isReconnecting],
   );
 
   return (

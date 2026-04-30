@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
-import { ArrowRight, Check, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, Loader2, Lock } from "lucide-react";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
@@ -32,6 +32,7 @@ type Step =
   | "private-checking"
   | "register"
   | "private-confirm"
+  | "quick-confirm"
   | "quick-sending"
   | "proving"
   | "success";
@@ -40,8 +41,10 @@ type PaymentRail = "quick" | "private";
 
 /**
  * Payment confirmation modal.
- * Default path is Quick Pay: one normal wallet approval, no Umbra setup.
- * Private Pay is opt-in and only then checks/wires Umbra registration.
+ * Default path is Private Pay (Umbra) when the recipient has umbraStatus
+ * "active". Public Quick Pay is a fallback the payer must explicitly opt
+ * into via a confirmation step. When the recipient is not Umbra-active,
+ * the primary CTA is Quick Pay and there is no fallback link.
  */
 export function PayConfirmationModal({
   open,
@@ -53,7 +56,9 @@ export function PayConfirmationModal({
   subPath,
   invoiceId,
   vaultPubkey,
+  umbraStatus,
 }: Props) {
+  const isUmbraActive = umbraStatus === "active";
   const [step, setStep] = useState<Step>("confirm");
   const [completedRail, setCompletedRail] = useState<PaymentRail>("quick");
   const { connectedWallet } = useWallet();
@@ -141,8 +146,21 @@ export function PayConfirmationModal({
             memo={memo}
             subPath={subPath}
             invoiceId={invoiceId}
-            onQuickPay={startQuickPay}
-            onPrivatePay={startPrivatePay}
+            isUmbraActive={isUmbraActive}
+            onPay={isUmbraActive ? startPrivatePay : startQuickPay}
+            onChoosePublic={() => setStep("quick-confirm")}
+          />
+        )}
+        {step === "quick-confirm" && (
+          <QuickConfirmStep
+            handle={handle}
+            displayName={displayName}
+            amount={amount}
+            memo={memo}
+            subPath={subPath}
+            invoiceId={invoiceId}
+            onContinue={startQuickPay}
+            onBack={() => setStep("confirm")}
           />
         )}
         {step === "private-confirm" && (
@@ -253,8 +271,8 @@ function RegisterStep({
           Just the one time.
         </DialogTitle>
         <DialogDescription>
-          Private Pay uses Umbra. Set it up once, then you can use the stronger
-          privacy route from any Monyr profile.
+          Private payments use <UmbraLink />. First-time setup — three signatures,
+          about 15 seconds.
         </DialogDescription>
       </DialogHeader>
       <div className="mt-5">
@@ -271,8 +289,9 @@ function ConfirmStep({
   memo,
   subPath,
   invoiceId,
-  onQuickPay,
-  onPrivatePay,
+  isUmbraActive,
+  onPay,
+  onChoosePublic,
 }: {
   handle: string;
   displayName: string | null;
@@ -280,8 +299,9 @@ function ConfirmStep({
   memo?: string;
   subPath?: string;
   invoiceId?: string;
-  onQuickPay: () => void;
-  onPrivatePay: () => void;
+  isUmbraActive: boolean;
+  onPay: () => void;
+  onChoosePublic: () => void;
 }) {
   return (
     <PaymentReview
@@ -292,20 +312,82 @@ function ConfirmStep({
       subPath={subPath}
       invoiceId={invoiceId}
     >
-      <div className="mt-5 space-y-2">
+      <div className="mt-5 space-y-3">
         <Button
-          onClick={onQuickPay}
+          onClick={onPay}
           className="h-12 w-full rounded-xl text-base font-semibold ring-1 ring-primary/30 shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)] transition-all hover:bg-primary/90 hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]"
         >
           Pay {amount.toFixed(2)} USDC
         </Button>
+
+        {isUmbraActive && (
+          <button
+            type="button"
+            onClick={onChoosePublic}
+            className="block w-full rounded-md py-1 text-center text-[12px] text-muted-foreground/70 underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            Having trouble? Pay publicly instead.
+          </button>
+        )}
+      </div>
+    </PaymentReview>
+  );
+}
+
+function QuickConfirmStep({
+  handle,
+  displayName,
+  amount,
+  memo,
+  subPath,
+  invoiceId,
+  onContinue,
+  onBack,
+}: {
+  handle: string;
+  displayName: string | null;
+  amount: number;
+  memo?: string;
+  subPath?: string;
+  invoiceId?: string;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const name = displayName ?? `@${handle}`;
+  return (
+    <PaymentReview
+      handle={handle}
+      displayName={displayName}
+      amount={amount}
+      memo={memo}
+      subPath={subPath}
+      invoiceId={invoiceId}
+    >
+      <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-border bg-surface-raised/30 px-3.5 py-3">
+        <Eye className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" strokeWidth={2} />
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
+          Your wallet and the amount will be visible on-chain.{" "}
+          <span className="text-foreground/85">{name}&apos;s main wallet stays private.</span>
+        </p>
+      </div>
+
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
-          onClick={onPrivatePay}
-          className="block w-full rounded-md py-1.5 text-center text-[12px] text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          onClick={onBack}
+          className="inline-flex items-center justify-center gap-1.5 rounded-md px-1 py-2 text-[13px] font-medium text-foreground/85 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          Use Private Pay instead
+          <ArrowLeft className="size-3.5" strokeWidth={2} />
+          Keep it private
         </button>
+        <Button
+          variant="outline"
+          onClick={onContinue}
+          className="h-11 rounded-xl px-5 text-[13px] font-medium border-border-strong"
+        >
+          Continue publicly
+          <ArrowRight className="ml-1.5 size-3.5" />
+        </Button>
       </div>
     </PaymentReview>
   );
@@ -464,6 +546,25 @@ function ProvingStep() {
         Usually 2–8 seconds
       </p>
     </div>
+  );
+}
+
+function UmbraLink() {
+  return (
+    <a
+      href="https://umbraprivacy.com/"
+      target="_blank"
+      rel="noreferrer"
+      className="group/umbra inline-flex items-baseline gap-0.5 text-foreground/90 transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+    >
+      <span className="font-serif italic underline underline-offset-4 decoration-primary/45 transition-colors group-hover/umbra:decoration-primary">
+        Umbra
+      </span>
+      <ArrowUpRight
+        className="size-3 self-center text-muted-foreground/80 transition-colors group-hover/umbra:text-primary"
+        strokeWidth={2}
+      />
+    </a>
   );
 }
 

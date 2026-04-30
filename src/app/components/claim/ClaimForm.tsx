@@ -22,7 +22,8 @@ import { addHandle, hadnleExists as handleExists } from "@/app/actions/handles";
 import { useRef, useState } from "react";
 import { useVault } from "@/app/hooks/useVault";
 import { useAuth } from "@/app/contexts/auth-context";
-// import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
+import { useWallet } from "@/app/contexts/wallet-context";
+// import { getVaultBalance, sponsorVaultForUmbraActivation } from "@/app/actions/vault";
 // import { useUmbra } from "@/app/hooks/useUmbra";
 // import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 
@@ -80,6 +81,7 @@ export default function HandleClaimForm({ onClaimed }: Props) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { createEncryptedVault } = useVault()
   const { refreshUser } = useAuth();
+  const { disconnectWallet } = useWallet();
   // const { registerAccount: registerUmbraAccount } = useUmbra()
 
   const form = useForm({
@@ -100,11 +102,14 @@ export default function HandleClaimForm({ onClaimed }: Props) {
       try {
         // User-visible wallet signature for vault encryption.
         setSubmitPhase("signing");
-        const wallet = await createEncryptedVault()
+        const wallet = await createEncryptedVault().catch(async (error) => {
+          await disconnectWallet();
+          throw error;
+        })
 
         // Fund the vault and wait until the balance is confirmed on-chain.
         // setSubmitPhase("setup");
-        // const sponsorResult = await sponsorVault(wallet.vaultPubkey)
+        // const sponsorResult = await sponsorVaultForUmbraActivation(wallet.vaultPubkey)
 
         // await waitForVaultBalance(
         //   wallet.vaultPubkey,

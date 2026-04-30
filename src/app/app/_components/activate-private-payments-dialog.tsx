@@ -17,8 +17,9 @@ import { delay } from "@/lib/delay";
 import { useAuth, type AuthUser, type UnlockedVault } from "@/app/contexts/auth-context";
 import { useVault } from "@/app/hooks/useVault";
 import { useUmbra } from "@/app/hooks/useUmbra";
-import { getVaultBalance, sponsorVault } from "@/app/actions/vault";
+import { getVaultBalance, sponsorVaultForUmbraActivation } from "@/app/actions/vault";
 import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
+import { sweepExcessVaultSol } from "@/lib/vault/sweep";
 import { setUmbraStatus } from "@/app/actions/handles";
 
 type StepKey =
@@ -27,6 +28,7 @@ type StepKey =
   | "userAccountInitialisation"
   | "registerX25519PublicKey"
   | "registerUserForAnonymousUsage"
+  | "sweep"
   | "finalize";
 
 
@@ -36,6 +38,7 @@ const STATUS_COPY: Record<StepKey, string> = {
   userAccountInitialisation: "Creating your private account…",
   registerX25519PublicKey: "Enabling encrypted balances…",
   registerUserForAnonymousUsage: "Going private…",
+  sweep: "Reclaiming unused setup funds…",
   finalize: "Almost done…",
 };
 
@@ -110,8 +113,13 @@ export function ActivatePrivatePaymentsDialog({
 
     if (lamports >= VAULT_SPONSOR_LAMPORTS) return;
 
-    const result = await sponsorVault(vaultPubkey);
+    const result = await sponsorVaultForUmbraActivation(vaultPubkey);
     await waitForVaultBalance(vaultPubkey, BigInt(result.lamports));
+  }
+
+  async function sweepUnusedSetupSol(vault: UnlockedVault) {
+    setActiveStep("sweep");
+    await sweepExcessVaultSol(vault);
   }
 
   async function ensureUmbraRegistered(vault: UnlockedVault) {
@@ -149,6 +157,7 @@ export function ActivatePrivatePaymentsDialog({
       const vault = await ensureUnlockedVault();
       await ensureFundedVault(vault.vaultPubkey);
       await ensureUmbraRegistered(vault);
+      await sweepUnusedSetupSol(vault);
 
       setActiveStep("finalize");
       await setUmbraStatus(user.handle, "active");
@@ -164,6 +173,8 @@ export function ActivatePrivatePaymentsDialog({
     }
   }
 
+  const statusLine = activeStep ? STATUS_COPY[activeStep] : null;
+
   const buttonLabel = useMemo(() => {
     if (isDone) return "Done";
     if (!isWorking) {
@@ -171,10 +182,8 @@ export function ActivatePrivatePaymentsDialog({
         ? "Continue activation"
         : "Activate";
     }
-    return "Activating…";
-  }, [isDone, isWorking, unlockedVault, user.vaultPubkey]);
-
-  const statusLine = activeStep ? STATUS_COPY[activeStep] : null;
+    return statusLine ?? "Activating…";
+  }, [isDone, isWorking, statusLine, unlockedVault, user.vaultPubkey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -212,12 +221,7 @@ export function ActivatePrivatePaymentsDialog({
             </DialogDescription>
           </div>
 
-          {/* Body swaps between value props (idle) and live status (running). */}
-          {isWorking ? (
-            <ActivatingStatus line={statusLine} />
-          ) : !isDone ? (
-            <ValueProps />
-          ) : null}
+          {!isWorking && !isDone ? <ValueProps /> : null}
 
           {error && (
             <p
@@ -245,7 +249,13 @@ export function ActivatePrivatePaymentsDialog({
               {isWorking ? (
                 <>
                   <Loader2 className="mr-2 size-4 animate-spin" />
-                  {buttonLabel}
+                  <span
+                    key={buttonLabel}
+                    aria-live="polite"
+                    className="animate-[status-fade_360ms_ease-out]"
+                  >
+                    {buttonLabel}
+                  </span>
                 </>
               ) : isDone ? (
                 <>
@@ -256,6 +266,18 @@ export function ActivatePrivatePaymentsDialog({
                 buttonLabel
               )}
             </Button>
+            <style jsx>{`
+              @keyframes status-fade {
+                from {
+                  opacity: 0;
+                  transform: translateY(2px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
 
             <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12px] leading-snug text-muted-foreground/85">
               <span className="inline-flex items-center gap-1.5">
@@ -339,30 +361,3 @@ function ValueRow({
   );
 }
 
-function ActivatingStatus({ line }: { line: string | null }) {
-  return (
-    <div className="flex h-[72px] w-full flex-col items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/[0.04] px-4">
-      <span className="font-mono tabular text-[10px] uppercase tracking-[0.22em] text-primary/75">
-        Working
-      </span>
-      <p
-        key={line}
-        className="text-center text-[13px] leading-snug text-foreground/90 animate-[status-fade_360ms_ease-out]"
-      >
-        {line ?? "Preparing…"}
-      </p>
-      <style jsx>{`
-        @keyframes status-fade {
-          from {
-            opacity: 0;
-            transform: translateY(4px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
-    </div>
-  );
-}

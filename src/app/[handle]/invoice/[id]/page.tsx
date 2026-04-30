@@ -42,7 +42,7 @@ export default async function HandleInvoicePage({
         handle={profile.handle}
         displayName={profile.displayName}
         vaultPubkey={profile.vaultPubkey}
-        umbraStatus={profile.umbraStatus as "inactive" | "activating" | "active" | "failed"}
+        umbraStatus={profile.umbraStatus}
         bio={profile.bio}
         variant={variant}
         // subPath={`invoice/${invoice.id}`}

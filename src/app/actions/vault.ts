@@ -27,9 +27,22 @@ import { getOwnerWalletLookup } from "@/lib/auth/owner-wallet";
 import { requireWalletSession } from "@/lib/auth/session";
 import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
 
-async function sendSol(to: string, amountLamports: bigint) {
+async function getSponsorSigner() {
   const secretKey = bs58.decode(process.env.SOLANA_SECRET_KEY_BASE58!);
-  const signer = await createKeyPairSignerFromBytes(secretKey);
+  return createKeyPairSignerFromBytes(secretKey);
+}
+
+export async function getSponsorWalletAddress() {
+  const signer = await getSponsorSigner();
+  return signer.address;
+}
+
+async function sendSol(to: string, amountLamports: bigint) {
+  if (amountLamports <= 0n) {
+    throw new Error("Transfer amount must be greater than zero");
+  }
+
+  const signer = await getSponsorSigner();
 
   const rpc = createSolanaRpc(process.env.SOLANA_RPC_URL!);
   const rpcSubscriptions = createSolanaRpcSubscriptions(
@@ -76,10 +89,13 @@ export async function getVaultBalance(vaultAddress: string) {
   return { lamports: balance.value.toString() };
 }
 
-export async function sponsorVault(vaultAddress: string) {
+export async function sponsorVaultForUmbraActivation(vaultAddress: string) {
   const session = await requireWalletSession();
 
-  const ownedVault = await getDb().select({ id: handles.id })
+  const ownedVault = await getDb().select({
+    id: handles.id,
+    umbraStatus: handles.umbra_status,
+  })
     .from(handles)
     .where(and(
       eq(handles.vault_pubkey, vaultAddress),
@@ -87,14 +103,23 @@ export async function sponsorVault(vaultAddress: string) {
     ))
     .limit(1);
 
-  if (!ownedVault[0]) {
+  const vault = ownedVault[0];
+
+  if (!vault) {
     throw new Error("Unauthorized");
   }
 
+  if (vault.umbraStatus === "active") {
+    throw new Error("Vault is already active");
+  }
+
   const balance = await getVaultBalance(vaultAddress);
-  if (BigInt(balance.lamports) >= VAULT_SPONSOR_LAMPORTS) {
+  const currentLamports = BigInt(balance.lamports);
+  const neededLamports = VAULT_SPONSOR_LAMPORTS - currentLamports;
+
+  if (neededLamports <= 0n) {
     return { signature: null, lamports: "0" };
   }
 
-  return sendSol(vaultAddress, VAULT_SPONSOR_LAMPORTS);
+  return sendSol(vaultAddress, neededLamports);
 }

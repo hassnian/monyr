@@ -27,7 +27,7 @@ const STEP_ROWS: Array<{
   {
     key: "userAccountInitialisation",
     label: "Create your private account",
-    sub: "A one-time on-chain setup",
+    sub: "Opens your account on Solana",
   },
   {
     key: "registerX25519PublicKey",
@@ -187,7 +187,7 @@ export default function UmbraRegister({ onComplete }: Props) {
           </>
         )}
         {!isCheckingRegistration && phase === "idle" &&
-          (hasStartedRegistration ? "Continue registration" : "Start registration")}
+          (hasStartedRegistration ? "Continue & pay" : "Set up & pay")}
         {phase === "signing" && (
           <>
             <Loader2 className="mr-2 size-4 animate-spin" />

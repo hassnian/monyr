@@ -2,9 +2,7 @@ import { index, pgEnum, text, pgTable, timestamp, varchar, unique, uuid } from "
 
 export const umbraStatusEnum = pgEnum("umbra_status", [
   "inactive",
-  "activating",
   "active",
-  "failed",
 ]);
 
 export const handles = pgTable(

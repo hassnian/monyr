@@ -57,10 +57,12 @@ export function ProfileCard({
   const isPayDisabled = !isInvoice && !canPay;
 
   const label = isInvoice
-    ? `Pay ${variant.amount.toFixed(2)} USDC privately`
+    ? `Pay ${variant.amount.toFixed(2)} USDC`
     : canPay
-      ? `Pay ${numericAmount.toFixed(2)} USDC privately`
+      ? `Pay ${numericAmount.toFixed(2)} USDC`
       : "Enter an amount";
+
+  const isUmbraActive = umbraStatus === "active";
 
   function confirmPay() {
     if (!connectedWallet) {
@@ -208,6 +210,13 @@ export function ProfileCard({
         >
           {label}
         </Button>
+
+        {isUmbraActive && (
+          <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground/85">
+            <Lock className="size-3" strokeWidth={2} />
+            Encrypted via Umbra · No wallet address exposed
+          </p>
+        )}
       </div>
 
       <PayConfirmationModal
