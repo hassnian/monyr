@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, Loader2, Lock } from "
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
+import { recordPaymentReceipt } from "@/app/actions/payment-receipts";
 import UmbraRegister from "@/app/components/claim/UmbraRegister";
 import type { ProfileIdentity } from "./profile.types";
 
@@ -91,7 +92,15 @@ export function PayConfirmationModal({
         destinationOwner: vaultPubkey,
         amount,
       });
-      setReceiptSignature(String(result.signature));
+      const receiptSignature = String(result.signature);
+      setReceiptSignature(receiptSignature);
+      await recordPaymentReceipt({
+        handle,
+        rail: "quick",
+        receiptSignature,
+      }).catch((error) => {
+        console.error("Failed to save payment receipt", error);
+      });
       setStep("success");
     } catch (error) {
       console.error("Quick Pay failed", error);
@@ -104,9 +113,24 @@ export function PayConfirmationModal({
     setStep("proving");
     try {
       const result = await depositAmount({ amount, address: vaultPubkey });
-      setReceiptSignature(
-        String(result.callbackSignature ?? result.queueSignature),
-      );
+      const receiptSignature = String(result.callbackSignature ?? result.queueSignature);
+      setReceiptSignature(receiptSignature);
+      await recordPaymentReceipt({
+        handle,
+        rail: "private",
+        receiptSignature,
+        queueSignature: String(result.queueSignature),
+        callbackSignature: result.callbackSignature
+          ? String(result.callbackSignature)
+          : undefined,
+        callbackStatus: result.callbackStatus,
+        callbackElapsedMs: result.callbackElapsedMs,
+        rentClaimSignature: result.rentClaimSignature
+          ? String(result.rentClaimSignature)
+          : undefined,
+      }).catch((error) => {
+        console.error("Failed to save payment receipt", error);
+      });
       setStep("success");
     } catch (error) {
       console.error("Private Pay failed", error);

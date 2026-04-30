@@ -3,6 +3,7 @@ import {
   getUserAccountQuerierFunction,
   getUserRegistrationFunction,
   getPublicBalanceToEncryptedBalanceDirectDepositorFunction,
+  getEncryptedBalanceQuerierFunction,
 } from "@umbra-privacy/sdk";
 import {
   type IUmbraClient,
@@ -257,6 +258,19 @@ export function useUmbra() {
     }
   }
 
+  async function getPrivateUsdcBalance({
+    signer: providedSigner,
+  }: { signer?: IUmbraSigner } = {}) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    const queryBalance = getEncryptedBalanceQuerierFunction({ client });
+    const balances = await queryBalance([solanaPaymentConfig.usdcMint]);
+
+    return balances.get(solanaPaymentConfig.usdcMint) ?? {
+      state: "non_existent" as const,
+    };
+  }
+
   async function depositAmount({
     amount,
     address,
@@ -313,6 +327,7 @@ export function useUmbra() {
     isAccountRegistered,
     isAcountRegistered: isAccountRegistered,
     isAccountFullyRegistered: isUmbraAccountFullyRegistered,
+    getPrivateUsdcBalance,
     depositAmount,
   };
 }

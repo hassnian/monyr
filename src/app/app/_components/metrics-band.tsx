@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Eye, EyeOff, ShieldCheck, Clock } from "lucide-react";
+import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
+import { Eye, EyeOff, ShieldCheck, Clock, Loader2 } from "lucide-react";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { cn } from "@/lib/utils";
 import { ActivitySpark } from "./activity-spark";
+import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
+import { useUmbra } from "@/app/hooks/useUmbra";
+import { useVault } from "@/app/hooks/useVault";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { dailyFlow, metrics } from "../_data";
 
 /**
@@ -12,8 +17,42 @@ import { dailyFlow, metrics } from "../_data";
  * tile holding the 30-day sparkline. Privacy-first: a single toggle blurs all
  * amounts on screen.
  */
-export function MetricsBand() {
+export function MetricsBand({ user }: { user: AuthUser }) {
   const [revealed, setRevealed] = useState(true);
+  const { unlockedVault, setUnlockedVault } = useAuth();
+  const { decryptEncryptedVault } = useVault();
+  const { getPrivateUsdcBalance } = useUmbra();
+  const [privateBalance, setPrivateBalance] = useState<number | null>(null);
+  const [balanceState, setBalanceState] = useState<string | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+
+  async function revealPrivateBalance() {
+    if (isLoadingBalance || user.umbraStatus !== "active") return;
+
+    setIsLoadingBalance(true);
+    try {
+      const vault = unlockedVault?.vaultPubkey === user.vaultPubkey
+        ? unlockedVault
+        : await decryptEncryptedVault(user.encryptedVaultSecret, user.vaultPubkey);
+
+      setUnlockedVault(vault);
+      const result = await getPrivateUsdcBalance({
+        signer: createUmbraSignerFromKeyPair(vault.keyPairSigner),
+      });
+
+      setBalanceState(result.state);
+      setPrivateBalance(
+        result.state === "shared"
+          ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
+          : null,
+      );
+    } catch {
+      setBalanceState("error");
+      setPrivateBalance(null);
+    } finally {
+      setIsLoadingBalance(false);
+    }
+  }
 
   return (
     <section aria-label="Summary">
@@ -49,7 +88,7 @@ export function MetricsBand() {
         {/* Hero tile — total received + sparkline */}
         <Tile
           className="md:col-span-3"
-          label="Total received (private)"
+          label="Private USDC balance"
           eyebrow={
             <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
               <ShieldCheck className="size-3 text-success" strokeWidth={2.25} />
@@ -60,17 +99,36 @@ export function MetricsBand() {
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
               <AmountDisplay
-                amount={metrics.totalReceived}
+                amount={privateBalance}
                 hidden={!revealed}
                 size="xl"
                 className="leading-none"
               />
               <p className="mt-2 text-[12px] text-muted-foreground/80">
-                <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
-                across <span className="font-mono tabular">6</span> sub-handles
+                {getPrivateBalanceCopy({
+                  balanceState,
+                  isActive: user.umbraStatus === "active",
+                  hasBalance: privateBalance !== null,
+                })}
               </p>
             </div>
-            <Delta value={metrics.monthOverMonthDelta} />
+            <button
+              type="button"
+              onClick={revealPrivateBalance}
+              disabled={isLoadingBalance || user.umbraStatus !== "active"}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium",
+                "text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              )}
+            >
+              {isLoadingBalance ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-3" strokeWidth={2.25} />
+              )}
+              {privateBalance === null ? "Reveal" : "Refresh"}
+            </button>
           </div>
           <div className="mt-3 -mx-1 text-foreground/60">
             <ActivitySpark data={dailyFlow} height={44} />
@@ -136,6 +194,25 @@ export function MetricsBand() {
   );
 }
 
+function getPrivateBalanceCopy({
+  balanceState,
+  isActive,
+  hasBalance,
+}: {
+  balanceState: string | null;
+  isActive: boolean;
+  hasBalance: boolean;
+}) {
+  if (!isActive) return "Activate private payments to receive privately.";
+  if (hasBalance) return "Live encrypted balance in your Hush Vault.";
+  if (balanceState === "uninitialized" || balanceState === "non_existent") {
+    return "No private USDC deposits yet.";
+  }
+  if (balanceState === "mxe") return "Balance is encrypted in network mode.";
+  if (balanceState === "error") return "Could not decrypt balance. Try again.";
+  return "Unlock your vault to decrypt the current balance.";
+}
+
 function Tile({
   label,
   eyebrow,
@@ -172,24 +249,3 @@ function Tile({
   );
 }
 
-function Delta({ value }: { value: number }) {
-  const positive = value >= 0;
-  const pct = `${positive ? "+" : ""}${Math.round(value * 100)}%`;
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium font-mono tabular",
-        positive
-          ? "bg-success/10 text-success"
-          : "bg-destructive/10 text-destructive",
-      )}
-    >
-      {positive ? (
-        <ArrowUpRight className="size-3" strokeWidth={2.5} />
-      ) : (
-        <ArrowDownRight className="size-3" strokeWidth={2.5} />
-      )}
-      {pct}
-    </span>
-  );
-}

@@ -65,7 +65,7 @@ export function DashboardShell() {
       <main className="relative z-10 mx-auto w-full max-w-7xl px-6 pb-24 pt-10 md:px-10 md:pt-12">
         <div className="flex flex-col gap-10">
           <IdentityStrip user={user} onActivated={refresh} />
-          <MetricsBand />
+          <MetricsBand user={user} />
           <QuickActions />
           <div className="h-px w-full bg-border/60" />
           <DashboardTabs />
