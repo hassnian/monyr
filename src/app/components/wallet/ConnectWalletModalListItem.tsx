@@ -18,7 +18,7 @@ export function ConnectWalletModalListItem({
   onDisconnect,
 }: {
   wallet: Wallet;
-  onConnected: (accounts: readonly WalletAccount[]) => void;
+  onConnected: (accounts: readonly WalletAccount[]) => void | Promise<void>;
   onDisconnect: () => void;
 }) {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -31,12 +31,20 @@ export function ConnectWalletModalListItem({
         wallet as WalletWithFeatures<StandardConnectFeature>
       ).features[StandardConnect];
       const { accounts } = await connectFeature.connect();
+      await onConnected(accounts);
       setConnected(true);
       setIsConnecting(false);
-      onConnected(accounts);
     } catch (error) {
       console.log("failed", error);
+      setConnected(false);
       setIsConnecting(false);
+
+      const disconnectFeature = (
+        wallet as WalletWithFeatures<StandardDisconnectFeature>
+      ).features[StandardDisconnect];
+      await disconnectFeature?.disconnect().catch((disconnectError) => {
+        console.error("Failed to disconnect wallet", disconnectError);
+      });
     }
   };
 

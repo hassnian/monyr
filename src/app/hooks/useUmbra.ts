@@ -50,6 +50,24 @@ type UmbraUserAccount = Awaited<
   ReturnType<ReturnType<typeof getUserAccountQuerierFunction>>
 >;
 
+function errorChainIncludes(error: unknown, text: string) {
+  let current: unknown = error;
+
+  while (current && typeof current === "object") {
+    if (
+      "message" in current &&
+      typeof current.message === "string" &&
+      current.message.includes(text)
+    ) {
+      return true;
+    }
+
+    current = "cause" in current ? current.cause : null;
+  }
+
+  return false;
+}
+
 export function isUmbraAccountFullyRegistered(
   account?: UmbraUserAccount | null,
 ) {
@@ -122,10 +140,18 @@ export function useUmbra() {
           chain: solanaPaymentConfig.chain,
           transaction: encoder.encode(transaction),
         });
+        const decoded = decoder.decode(output.signedTransaction);
 
-        return decoder.decode(output.signedTransaction) as Awaited<
-          ReturnType<IUmbraSigner["signTransaction"]>
-        >;
+        // Phantom returns the signed wire transaction, which is the source of
+        // truth for `messageBytes` + `signatures`. `@solana/kit`'s decoder does
+        // not preserve Kit-only metadata though, and Umbra's forwarder needs the
+        // original blockhash lifetime for confirmation (`lastValidBlockHeight`).
+        // Keep the wallet-signed transaction intact and reattach only that
+        // lifetime metadata.
+        return {
+          ...decoded,
+          lifetimeConstraint: transaction.lifetimeConstraint,
+        } as Awaited<ReturnType<IUmbraSigner["signTransaction"]>>;
       },
       async signTransactions(transactions) {
         const outputs = await signTxFeature.signTransaction(
@@ -136,11 +162,17 @@ export function useUmbra() {
           })),
         );
 
-        return outputs.map((output) =>
-          decoder.decode(output.signedTransaction) as Awaited<
-            ReturnType<IUmbraSigner["signTransaction"]>
-          >,
-        );
+        return transactions.map((transaction, index) => {
+          const decoded = decoder.decode(outputs[index].signedTransaction);
+
+          // Same rule as `signTransaction`: preserve the exact wallet-signed
+          // message/signature pair, then restore the original Kit lifetime data
+          // needed by Umbra/Solana Kit confirmation.
+          return {
+            ...decoded,
+            lifetimeConstraint: transaction.lifetimeConstraint,
+          } as Awaited<ReturnType<IUmbraSigner["signTransaction"]>>;
+        });
       },
       async signMessage(message) {
         const [output] = await signMessageFeature.signMessage({
@@ -243,11 +275,26 @@ export function useUmbra() {
         solanaPaymentConfig.tokenDecimals,
       );
 
-      return deposit(
-        toAddress(address),
-        solanaPaymentConfig.usdcMint,
-        amountInBaseUnits as U64,
-      );
+      const executeDeposit = () =>
+        deposit(
+          toAddress(address),
+          solanaPaymentConfig.usdcMint,
+          amountInBaseUnits as U64,
+        );
+
+      try {
+        return await executeDeposit();
+      } catch (error) {
+        // A Private Pay deposit can spend several seconds in wallet approval +
+        // proof/transaction preparation. If the RPC rejects the signed tx with an
+        // expired/missing blockhash, rebuild the Umbra deposit once so the payer
+        // signs a fresh transaction. Other failures are surfaced unchanged.
+        if (errorChainIncludes(error, "Blockhash not found")) {
+          return executeDeposit();
+        }
+
+        throw error;
+      }
     } catch (error) {
       console.error("Umbra deposit failed", {
         error,

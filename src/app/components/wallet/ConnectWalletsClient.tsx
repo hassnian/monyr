@@ -4,6 +4,7 @@ import { getWallets } from "@wallet-standard/app";
 import type { Wallet } from "@wallet-standard/base";
 import { useMemo, useSyncExternalStore } from "react";
 import { Wallet as WalletIcon, Lock } from "lucide-react";
+import { authenticateConnectedWallet } from "@/app/contexts/auth-context";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { ConnectWalletModalListItem } from "./ConnectWalletModalListItem";
 
@@ -93,11 +94,14 @@ export function ConnectWalletsClient({
           onDisconnect={() => {
             setConnectedWallet(null);
           }}
-          onConnected={(accounts) => {
-            setConnectedWallet({
+          onConnected={async (accounts) => {
+            const connectedWallet = {
               account: accounts[0],
               wallet,
-            });
+            };
+
+            await authenticateConnectedWallet(connectedWallet);
+            setConnectedWallet(connectedWallet);
             onConnected();
           }}
         />

@@ -48,7 +48,7 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes));
 }
 
-async function ensureWalletSession(connectedWallet: ConnectedWalletForSession) {
+export async function authenticateConnectedWallet(connectedWallet: ConnectedWalletForSession) {
   const walletAddress = connectedWallet.account.address;
   const currentSession = await getCurrentWalletSession();
 
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!connectedWallet) return [];
 
       try {
-        await ensureWalletSession(connectedWallet);
+        await authenticateConnectedWallet(connectedWallet);
       } catch (error) {
         await disconnectWallet();
         throw error;

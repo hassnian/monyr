@@ -31,7 +31,6 @@ type Step =
   | "confirm"
   | "private-checking"
   | "register"
-  | "private-confirm"
   | "quick-confirm"
   | "quick-sending"
   | "proving"
@@ -61,6 +60,7 @@ export function PayConfirmationModal({
   const isUmbraActive = umbraStatus === "active";
   const [step, setStep] = useState<Step>("confirm");
   const [completedRail, setCompletedRail] = useState<PaymentRail>("quick");
+  const [receiptSignature, setReceiptSignature] = useState<string | null>(null);
   const { connectedWallet } = useWallet();
   const { getUserAccount, isAccountFullyRegistered, depositAmount } = useUmbra();
 
@@ -69,6 +69,7 @@ export function PayConfirmationModal({
       // reset after the close animation so the next open starts at the choice screen
       const t = setTimeout(() => {
         setCompletedRail("quick");
+        setReceiptSignature(null);
         setStep("confirm");
       }, 300);
       return () => clearTimeout(t);
@@ -84,15 +85,31 @@ export function PayConfirmationModal({
     setStep("quick-sending");
 
     try {
-      await sendQuickUsdcPayment({
+      const result = await sendQuickUsdcPayment({
         wallet: connectedWallet.wallet,
         account: connectedWallet.account,
         destinationOwner: vaultPubkey,
         amount,
       });
+      setReceiptSignature(String(result.signature));
       setStep("success");
     } catch (error) {
       console.error("Quick Pay failed", error);
+      setStep("confirm");
+    }
+  }
+
+  async function runPrivateDeposit() {
+    setCompletedRail("private");
+    setStep("proving");
+    try {
+      const result = await depositAmount({ amount, address: vaultPubkey });
+      setReceiptSignature(
+        String(result.callbackSignature ?? result.queueSignature),
+      );
+      setStep("success");
+    } catch (error) {
+      console.error("Private Pay failed", error);
       setStep("confirm");
     }
   }
@@ -102,18 +119,10 @@ export function PayConfirmationModal({
     setStep("private-checking");
 
     const account = await getUserAccount();
-    setStep(isAccountFullyRegistered(account) ? "private-confirm" : "register");
-  }
-
-  async function confirmPrivatePay() {
-    setCompletedRail("private");
-    setStep("proving");
-    try {
-      await depositAmount({ amount, address: vaultPubkey });
-      setStep("success");
-    } catch (error) {
-      console.error("Private Pay failed", error);
-      setStep("confirm");
+    if (isAccountFullyRegistered(account)) {
+      await runPrivateDeposit();
+    } else {
+      setStep("register");
     }
   }
 
@@ -135,7 +144,7 @@ export function PayConfirmationModal({
             handle={handle}
             displayName={displayName}
             subPath={subPath}
-            onComplete={() => setStep("private-confirm")}
+            onComplete={runPrivateDeposit}
           />
         )}
         {step === "confirm" && (
@@ -163,17 +172,6 @@ export function PayConfirmationModal({
             onBack={() => setStep("confirm")}
           />
         )}
-        {step === "private-confirm" && (
-          <PrivateConfirmStep
-            handle={handle}
-            displayName={displayName}
-            amount={amount}
-            memo={memo}
-            subPath={subPath}
-            invoiceId={invoiceId}
-            onContinue={confirmPrivatePay}
-          />
-        )}
         {step === "quick-sending" && <QuickSendingStep />}
         {step === "proving" && <ProvingStep />}
         {step === "success" && (
@@ -182,6 +180,7 @@ export function PayConfirmationModal({
             displayName={displayName}
             amount={amount}
             rail={completedRail}
+            receiptSignature={receiptSignature}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -393,47 +392,6 @@ function QuickConfirmStep({
   );
 }
 
-function PrivateConfirmStep({
-  handle,
-  displayName,
-  amount,
-  memo,
-  subPath,
-  invoiceId,
-  onContinue,
-}: {
-  handle: string;
-  displayName: string | null;
-  amount: number;
-  memo?: string;
-  subPath?: string;
-  invoiceId?: string;
-  onContinue: () => void;
-}) {
-  return (
-    <PaymentReview
-      handle={handle}
-      displayName={displayName}
-      amount={amount}
-      memo={memo}
-      subPath={subPath}
-      invoiceId={invoiceId}
-    >
-      <div className="mt-4 rounded-xl border border-primary/20 bg-primary/10 p-3 text-xs leading-relaxed text-muted-foreground">
-        Private Pay routes through Umbra. Your wallet may ask for a proof/signature
-        flow before submitting.
-      </div>
-      <Button
-        onClick={onContinue}
-        className="mt-5 h-12 w-full rounded-xl text-base font-semibold hover:bg-primary/90"
-      >
-        Continue privately
-        <ArrowRight className="ml-1.5 size-4" />
-      </Button>
-    </PaymentReview>
-  );
-}
-
 function PaymentReview({
   handle,
   displayName,
@@ -530,7 +488,7 @@ function ProvingStep() {
         Sealing your payment.
       </h3>
       <p className="mt-2 text-sm text-muted-foreground max-w-[32ch] mx-auto">
-        Generating a privacy proof so no one can see the amount or where it went.
+        Hiding the amount and recipient on-chain.
       </p>
 
       <div
@@ -587,20 +545,28 @@ function Dot({ delay }: { delay: number }) {
   );
 }
 
+function shortenSignature(signature: string) {
+  if (signature.length <= 14) return signature;
+  return `${signature.slice(0, 6)}…${signature.slice(-6)}`;
+}
+
 function SuccessStep({
   handle,
   displayName,
   amount,
   rail,
+  receiptSignature,
   onClose,
 }: {
   handle: string;
   displayName: string | null;
   amount: number;
   rail: PaymentRail;
+  receiptSignature: string | null;
   onClose: () => void;
 }) {
   const isPrivate = rail === "private";
+  const receipt = receiptSignature ? shortenSignature(receiptSignature) : "Pending…";
 
   return (
     <div className="p-8 text-center">
@@ -631,17 +597,19 @@ function SuccessStep({
               Receipt
             </p>
             <p className="mt-0.5 text-xs font-mono text-foreground/80 truncate">
-              rcpt_4xKp…9wQz
+              {receipt}
             </p>
           </div>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto shrink-0 px-0 text-xs"
-          >
-            Download PDF
-          </Button>
+          {receiptSignature && (
+            <a
+              href={`https://solscan.io/tx/${receiptSignature}`}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 text-xs font-medium text-primary underline-offset-4 hover:underline"
+            >
+              View
+            </a>
+          )}
         </div>
       </div>
 
