@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { outgoing, sendLinks, profile, type Outgoing, type SendLink } from "../_data";
 
 import { relativeTime, formatDateShort } from "../_utils";
+import { PreviewEyebrow } from "./preview-eyebrow";
 
 /**
  * Outgoing payments live in two buckets:
@@ -21,6 +22,7 @@ import { relativeTime, formatDateShort } from "../_utils";
 export function Outbox() {
   return (
     <div className="flex flex-col gap-10">
+      <PreviewEyebrow note="design preview · live sends coming soon" />
       <section>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div className="max-w-xl space-y-1">

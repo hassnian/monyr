@@ -159,6 +159,7 @@ export default function HandleClaimForm({ onClaimed }: Props) {
           handle,
           vaultPubkey: wallet.vaultPubkey,
           encryptedVaultSecret: wallet.encryptedVaultSecret,
+          receiptEncryptionPublicKey: wallet.receiptEncryptionPublicKey,
           displayName: value.displayName.trim() || undefined,
           bio: value.bio.trim() || undefined,
         });

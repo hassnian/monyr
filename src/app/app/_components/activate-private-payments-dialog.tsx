@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ShieldCheck, Check, Sparkles, KeyRound, Coins, Clock3, ArrowUpRight } from "lucide-react";
+import { Loader2, ShieldCheck, Check, Sparkles, KeyRound, Lock, Clock3, ArrowUpRight, Copy } from "lucide-react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 
 import {
@@ -17,6 +17,8 @@ import { delay } from "@/lib/delay";
 import { useAuth, type AuthUser, type UnlockedVault } from "@/app/contexts/auth-context";
 import { useVault } from "@/app/hooks/useVault";
 import { useUmbra } from "@/app/hooks/useUmbra";
+import { UmbraMark } from "@/components/payments/umbra-mark";
+import { handleUrl } from "@/lib/brand";
 import { getVaultBalance, sponsorVaultForUmbraActivation } from "@/app/actions/vault";
 import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
 import { sweepExcessVaultSol } from "@/lib/vault/sweep";
@@ -79,9 +81,20 @@ export function ActivatePrivatePaymentsDialog({
   const [error, setError] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState<StepKey | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
+  const [copied, setCopied] = useState(false);
 
   const isWorking = phase === "running";
   const isDone = phase === "done";
+
+  function handleCopyPaymentLink() {
+    try {
+      navigator.clipboard?.writeText(`https://${handleUrl(user.handle)}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard may be blocked in some contexts — ignore. */
+    }
+  }
 
   // When the dialog reopens after a transient error, clear the error so the
   // user starts fresh — but leave the cached unlock state alone.
@@ -176,14 +189,14 @@ export function ActivatePrivatePaymentsDialog({
   const statusLine = activeStep ? STATUS_COPY[activeStep] : null;
 
   const buttonLabel = useMemo(() => {
-    if (isDone) return "Done";
+    if (isDone) return copied ? "Copied" : "Copy your payment link";
     if (!isWorking) {
       return unlockedVault?.vaultPubkey === user.vaultPubkey
         ? "Continue activation"
         : "Activate";
     }
     return statusLine ?? "Activating…";
-  }, [isDone, isWorking, statusLine, unlockedVault, user.vaultPubkey]);
+  }, [isDone, copied, isWorking, statusLine, unlockedVault, user.vaultPubkey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -205,10 +218,17 @@ export function ActivatePrivatePaymentsDialog({
 
         <div className="flex flex-col items-center gap-6 px-7 pb-7 pt-9">
           <div className="flex flex-col items-center gap-3 text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-raised/40 px-3 py-1 font-mono tabular text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
-              <Sparkles className="size-3 text-primary" strokeWidth={2.25} />
-              One-time setup
-            </span>
+            {isDone ? (
+              <span className="inline-flex items-center gap-2 rounded-full border border-primary/45 bg-primary/15 px-3 py-1 font-mono tabular text-[10px] uppercase tracking-[0.22em] text-primary">
+                <Check className="size-3" strokeWidth={2.5} />
+                Active
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-raised/40 px-3 py-1 font-mono tabular text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
+                <Sparkles className="size-3 text-primary" strokeWidth={2.25} />
+                One-time setup
+              </span>
+            )}
             <DialogTitle className="font-serif text-[28px] leading-[1.05] tracking-tight text-foreground">
               {isDone
                 ? "Private payments are live."
@@ -221,7 +241,7 @@ export function ActivatePrivatePaymentsDialog({
             </DialogDescription>
           </div>
 
-          {!isWorking && !isDone ? <ValueProps /> : null}
+          {!isDone ? <ValueProps /> : null}
 
           {error && (
             <p
@@ -236,7 +256,7 @@ export function ActivatePrivatePaymentsDialog({
           <div className="flex w-full flex-col items-center gap-3">
             <Button
               type="button"
-              onClick={isDone ? () => onOpenChange(false) : handleActivate}
+              onClick={isDone ? handleCopyPaymentLink : handleActivate}
               disabled={isWorking}
               className={cn(
                 "h-12 w-full rounded-xl bg-primary text-base font-semibold text-primary-foreground hover:bg-primary/90",
@@ -259,8 +279,18 @@ export function ActivatePrivatePaymentsDialog({
                 </>
               ) : isDone ? (
                 <>
-                  <Check className="mr-2 size-4" strokeWidth={2.5} />
-                  {buttonLabel}
+                  {copied ? (
+                    <Check className="mr-2 size-4" strokeWidth={2.5} />
+                  ) : (
+                    <Copy className="mr-2 size-4" strokeWidth={2.25} />
+                  )}
+                  <span
+                    key={buttonLabel}
+                    aria-live="polite"
+                    className="animate-[status-fade_360ms_ease-out]"
+                  >
+                    {buttonLabel}
+                  </span>
                 </>
               ) : (
                 buttonLabel
@@ -289,11 +319,14 @@ export function ActivatePrivatePaymentsDialog({
                 href="https://umbraprivacy.com/"
                 target="_blank"
                 rel="noreferrer"
-                className="group/umbra inline-flex items-center gap-1 text-foreground/90 transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
+                className="group/umbra inline-flex items-center gap-1.5 text-foreground/90 transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
               >
-                Powered by{" "}
-                <span className="font-serif italic underline underline-offset-4 decoration-primary/45 transition-colors group-hover/umbra:decoration-primary">
-                  Umbra
+                <span>Powered by</span>
+                <span className="inline-flex items-center gap-1">
+                  <UmbraMark className="size-3 text-foreground/85 transition-colors group-hover/umbra:text-primary" />
+                  <span className="font-serif italic underline underline-offset-4 decoration-primary/45 transition-colors group-hover/umbra:decoration-primary">
+                    Umbra
+                  </span>
                 </span>
                 <ArrowUpRight
                   className="size-3 text-muted-foreground/80 transition-colors group-hover/umbra:text-primary"
@@ -317,14 +350,9 @@ function ValueProps() {
         sub="Keys never leave your device"
       />
       <ValueRow
-        icon={<Coins className="size-3.5" strokeWidth={2.25} />}
-        title="No upfront cost"
-        sub={
-          <>
-            <span className="font-mono tabular text-foreground/85">~$1</span>{" "}
-            in setup fees, deducted from your first private payment
-          </>
-        }
+        icon={<Lock className="size-3.5" strokeWidth={2.25} />}
+        title="End-to-end encrypted"
+        sub="Payments land in a vault only your wallet opens"
       />
       <ValueRow
         icon={<Clock3 className="size-3.5" strokeWidth={2.25} />}

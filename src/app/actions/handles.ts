@@ -18,12 +18,14 @@ export async function addHandle({
   handle,
   vaultPubkey,
   encryptedVaultSecret,
+  receiptEncryptionPublicKey,
   bio,
   displayName
 }: {
     handle: string,
     vaultPubkey: string,
     encryptedVaultSecret: string,
+    receiptEncryptionPublicKey: string,
     bio?: string
     displayName?: string
 }) {
@@ -33,6 +35,7 @@ export async function addHandle({
       handle,
       vault_pubkey: vaultPubkey,
       encrypted_vault_secret: encryptedVaultSecret,
+      receipt_encryption_pubkey: receiptEncryptionPublicKey,
       owner_wallet_lookup: getOwnerWalletLookup(session.walletAddress),
       umbra_status: "inactive",
       bio,
@@ -57,6 +60,7 @@ export async function getHandle(handle: string) {
       displayName: handles.display_name,
       vaultPubkey: handles.vault_pubkey,
       umbraStatus: handles.umbra_status,
+      receiptEncryptionPublicKey: handles.receipt_encryption_pubkey,
       bio: handles.bio,
     }).from(handles)
       .where(eq(handles.handle, handle))
@@ -77,6 +81,7 @@ export async function getMyHandles() {
       displayName: handles.display_name,
       vaultPubkey: handles.vault_pubkey,
       encryptedVaultSecret: handles.encrypted_vault_secret,
+      receiptEncryptionPublicKey: handles.receipt_encryption_pubkey,
       umbraStatus: handles.umbra_status,
       bio: handles.bio,
     }).from(handles)

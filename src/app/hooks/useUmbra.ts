@@ -2,8 +2,9 @@ import {
   getUmbraClient,
   getUserAccountQuerierFunction,
   getUserRegistrationFunction,
-  getPublicBalanceToEncryptedBalanceDirectDepositorFunction,
   getEncryptedBalanceQuerierFunction,
+  getPublicBalanceToReceiverClaimableUtxoCreatorFunction,
+  getClaimableUtxoScannerFunction,
 } from "@umbra-privacy/sdk";
 import {
   type IUmbraClient,
@@ -12,6 +13,7 @@ import {
 } from "@umbra-privacy/sdk/interfaces";
 import {
   getCdnZkAssetProvider,
+  getCreateReceiverClaimableUtxoFromPublicBalanceProver,
   getUserRegistrationProver,
 } from "@umbra-privacy/web-zk-prover";
 import { useRef } from "react";
@@ -27,7 +29,7 @@ import {
 } from "@solana/wallet-standard-features";
 import { nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
-import { U64 } from "@umbra-privacy/sdk/types";
+import { U32, U64 } from "@umbra-privacy/sdk/types";
 
 const isMainnet =
   solanaPaymentConfig.chain === "solana:mainnet" ||
@@ -50,6 +52,10 @@ const UMBRA_CLIENT_CONFIG = {
 type UmbraUserAccount = Awaited<
   ReturnType<ReturnType<typeof getUserAccountQuerierFunction>>
 >;
+
+const MAX_LEAVES_PER_TREE = 2n ** 20n;
+const DASHBOARD_SCAN_WINDOW_SIZE = 500n;
+const DASHBOARD_SCAN_PAGE_SIZE = 50n;
 
 function errorChainIncludes(error: unknown, text: string) {
   let current: unknown = error;
@@ -271,7 +277,7 @@ export function useUmbra() {
     };
   }
 
-  async function depositAmount({
+  async function createReceiverClaimableUtxo({
     amount,
     address,
   }: {
@@ -281,42 +287,138 @@ export function useUmbra() {
     try {
       const signer = getConnectedSigner();
       const client = await getClient(signer);
-      const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({
-        client,
-      });
+      const createUtxo = getPublicBalanceToReceiverClaimableUtxoCreatorFunction(
+        { client },
+        {
+          zkProver: getCreateReceiverClaimableUtxoFromPublicBalanceProver({
+            assetProvider: getCdnZkAssetProvider({
+              baseUrl: "/api/umbra-zk",
+              manifestUrl: "/api/umbra-zk/manifest.json",
+            }),
+          }),
+        },
+      );
       const amountInBaseUnits = nativeAmount(
         amount,
         solanaPaymentConfig.tokenDecimals,
       );
 
-      const executeDeposit = () =>
-        deposit(
-          toAddress(address),
-          solanaPaymentConfig.usdcMint,
-          amountInBaseUnits as U64,
-        );
+      const executeCreateUtxo = () =>
+        createUtxo({
+          amount: amountInBaseUnits as U64,
+          destinationAddress: toAddress(address),
+          mint: solanaPaymentConfig.usdcMint,
+        });
 
       try {
-        return await executeDeposit();
+        const result = await executeCreateUtxo();
+        return { signature: result.createUtxoSignature };
       } catch (error) {
-        // A Private Pay deposit can spend several seconds in wallet approval +
-        // proof/transaction preparation. If the RPC rejects the signed tx with an
-        // expired/missing blockhash, rebuild the Umbra deposit once so the payer
-        // signs a fresh transaction. Other failures are surfaced unchanged.
+        // Wallet approval + proving can outlive a recent blockhash. Rebuild the
+        // Umbra UTXO transaction once on this exact RPC error; surface all other
+        // failures unchanged.
         if (errorChainIncludes(error, "Blockhash not found")) {
-          return executeDeposit();
+          const result = await executeCreateUtxo();
+          return { signature: result.createUtxoSignature };
         }
 
         throw error;
       }
     } catch (error) {
-      console.error("Umbra deposit failed", {
+      console.error("Umbra UTXO creation failed", {
         error,
         connectedAccountAddress: connectedWallet?.account.address,
         connectedWalletName: connectedWallet?.wallet.name,
       });
       throw error;
     }
+  }
+
+  /**
+   * Full Umbra UTXO scan.
+   *
+   * Important: if `endInsertionIndex` is omitted, the SDK scans through the
+   * entire Umbra tree (`2^20 - 1`) in pages of up to 1000 UTXOs and attempts to
+   * decrypt each page on the main thread. Calling this from always-mounted UI
+   * caused visible dashboard freezes. Keep this API for explicit/deep scans,
+   * but use `scanRecentClaimableUtxos` for live dashboard surfaces.
+   */
+  async function scanClaimableUtxos({
+    signer: providedSigner,
+    treeIndex = 0n,
+    startInsertionIndex = 0n,
+    endInsertionIndex,
+  }: {
+    signer?: IUmbraSigner;
+    treeIndex?: bigint;
+    startInsertionIndex?: bigint;
+    endInsertionIndex?: bigint;
+  } = {}) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    const scan = getClaimableUtxoScannerFunction({ client });
+
+    return scan(
+      treeIndex as U32,
+      startInsertionIndex as U32,
+      endInsertionIndex as U32 | undefined,
+    );
+  }
+
+  async function scanRecentClaimableUtxos({
+    signer: providedSigner,
+    treeIndex = 0n,
+    maxLeaves = DASHBOARD_SCAN_WINDOW_SIZE,
+    pageSize = DASHBOARD_SCAN_PAGE_SIZE,
+  }: {
+    signer?: IUmbraSigner;
+    treeIndex?: bigint;
+    maxLeaves?: bigint;
+    pageSize?: bigint;
+  } = {}) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+
+    if (!client.fetchUtxoData) {
+      throw new Error("Umbra client is missing UTXO indexer support");
+    }
+
+    // Bounded dashboard scan. Do not replace this with `scanClaimableUtxos()`
+    // in mounted UI: the SDK's default full-tree scan decrypts large UTXO pages
+    // on the main thread and caused repeated browser freezes.
+    const treeOffset = treeIndex * MAX_LEAVES_PER_TREE;
+    const probe = await client.fetchUtxoData(
+      treeOffset,
+      treeOffset + MAX_LEAVES_PER_TREE - 1n,
+      1n,
+    );
+    const totalCount = BigInt(probe.totalCount ?? 0);
+
+    if (totalCount === 0n) {
+      return {
+        selfBurnable: [],
+        received: [],
+        publicSelfBurnable: [],
+        publicReceived: [],
+        nextScanStartIndex: 0n,
+      };
+    }
+
+    const startInsertionIndex = totalCount > maxLeaves ? totalCount - maxLeaves : 0n;
+    const endInsertionIndex = totalCount - 1n;
+    const scan = getClaimableUtxoScannerFunction(
+      { client },
+      {
+        fetchUtxoData: (startIndex, endIndex) =>
+          client.fetchUtxoData!(startIndex, endIndex, pageSize),
+      },
+    );
+
+    return scan(
+      treeIndex as U32,
+      startInsertionIndex as U32,
+      endInsertionIndex as U32,
+    );
   }
 
   return {
@@ -328,6 +430,9 @@ export function useUmbra() {
     isAcountRegistered: isAccountRegistered,
     isAccountFullyRegistered: isUmbraAccountFullyRegistered,
     getPrivateUsdcBalance,
-    depositAmount,
+    createReceiverClaimableUtxo,
+    depositAmount: createReceiverClaimableUtxo,
+    scanClaimableUtxos,
+    scanRecentClaimableUtxos,
   };
 }

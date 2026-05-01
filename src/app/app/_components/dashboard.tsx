@@ -7,14 +7,7 @@ import { Outbox } from "./outbox";
 import { SubHandlesPane } from "./sub-handles";
 import { ReceiptsPanel } from "./receipts";
 
-const TABS = [
-  { value: "inbox", label: "Inbox", count: 12 },
-  { value: "outbox", label: "Outbox", count: 4 },
-  { value: "sub-handles", label: "Sub-handles", count: 6 },
-  { value: "receipts", label: "Receipts", count: null },
-] as const;
-
-type TabValue = (typeof TABS)[number]["value"];
+type TabValue = "inbox" | "outbox" | "sub-handles" | "receipts";
 
 /**
  * Tabbed surface rolling the main workstreams together. Tabs render inline
@@ -23,6 +16,13 @@ type TabValue = (typeof TABS)[number]["value"];
  */
 export function DashboardTabs() {
   const [active, setActive] = useState<TabValue>("inbox");
+  const [inboxCount, setInboxCount] = useState(0);
+  const tabs = [
+    { value: "inbox", label: "Inbox", count: inboxCount },
+    { value: "outbox", label: "Outbox", count: null },
+    { value: "sub-handles", label: "Sub-handles", count: null },
+    { value: "receipts", label: "Receipts", count: null },
+  ] as const;
 
   return (
     <section aria-label="Activity" className="flex flex-col gap-6">
@@ -31,7 +31,7 @@ export function DashboardTabs() {
         aria-label="Dashboard sections"
         className="flex items-end gap-1 border-b border-border/80 pb-0"
       >
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const isActive = active === t.value;
           return (
             <button
@@ -83,7 +83,7 @@ export function DashboardTabs() {
         aria-labelledby={`tab-${active}`}
         className="min-h-[320px]"
       >
-        {active === "inbox" && <Inbox />}
+        {active === "inbox" && <Inbox onCountChange={setInboxCount} />}
         {active === "outbox" && <Outbox />}
         {active === "sub-handles" && <SubHandlesPane />}
         {active === "receipts" && <ReceiptsPanel />}

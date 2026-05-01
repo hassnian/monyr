@@ -5,6 +5,7 @@ import { FileDown, FileText, ShieldCheck, KeyRound, Calendar } from "lucide-reac
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { cn } from "@/lib/utils";
 import { metrics } from "../_data";
+import { PreviewEyebrow } from "./preview-eyebrow";
 
 type RangeKey = "mtd" | "30d" | "q1" | "ytd" | "2025";
 
@@ -35,6 +36,7 @@ export function ReceiptsPanel() {
 
   return (
     <div className="flex flex-col gap-6">
+      <PreviewEyebrow note="design preview · totals and exports not yet wired" />
       <header className="max-w-2xl space-y-1">
         <h3 className="font-serif text-2xl leading-tight tracking-tight text-foreground">
           Receipts &amp; selective disclosure

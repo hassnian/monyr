@@ -2,57 +2,51 @@
 
 import { useState } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
-import { Eye, EyeOff, ShieldCheck, Clock, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Eye, EyeOff, ShieldCheck, Clock, Loader2, Lock } from "lucide-react";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { cn } from "@/lib/utils";
 import { ActivitySpark } from "./activity-spark";
 import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
-import { useVault } from "@/app/hooks/useVault";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { dailyFlow, metrics } from "../_data";
 
 /**
  * The "prospectus strip" — four editorial metric tiles, plus an oversized hero
- * tile holding the 30-day sparkline. Privacy-first: a single toggle blurs all
- * amounts on screen.
+ * tile holding the 30-day sparkline. Vault unlock is owned by the dashboard's
+ * locked banner; this band only fetches the encrypted balance once the vault
+ * is already unlocked, and exposes a cosmetic blur toggle for users who want
+ * to hide on-screen amounts.
  */
 export function MetricsBand({ user }: { user: AuthUser }) {
   const [revealed, setRevealed] = useState(true);
-  const { unlockedVault, setUnlockedVault } = useAuth();
-  const { decryptEncryptedVault } = useVault();
+  const { unlockedVault } = useAuth();
   const { getPrivateUsdcBalance } = useUmbra();
-  const [privateBalance, setPrivateBalance] = useState<number | null>(null);
-  const [balanceState, setBalanceState] = useState<string | null>(null);
-  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
-  async function revealPrivateBalance() {
-    if (isLoadingBalance || user.umbraStatus !== "active") return;
+  const isActive = user.umbraStatus === "active";
+  const isUnlocked =
+    isActive && unlockedVault?.vaultPubkey === user.vaultPubkey;
 
-    setIsLoadingBalance(true);
-    try {
-      const vault = unlockedVault?.vaultPubkey === user.vaultPubkey
-        ? unlockedVault
-        : await decryptEncryptedVault(user.encryptedVaultSecret, user.vaultPubkey);
-
-      setUnlockedVault(vault);
+  const { data: privateBalance, isFetching: isLoadingBalance } = useQuery({
+    enabled: isUnlocked && Boolean(unlockedVault),
+    queryKey: ["metrics", "private-balance", unlockedVault?.vaultPubkey],
+    queryFn: async () => {
+      if (!unlockedVault) return null;
       const result = await getPrivateUsdcBalance({
-        signer: createUmbraSignerFromKeyPair(vault.keyPairSigner),
+        signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
       });
+      return result.state === "shared"
+        ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
+        : null;
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
 
-      setBalanceState(result.state);
-      setPrivateBalance(
-        result.state === "shared"
-          ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
-          : null,
-      );
-    } catch {
-      setBalanceState("error");
-      setPrivateBalance(null);
-    } finally {
-      setIsLoadingBalance(false);
-    }
-  }
+  // Cosmetic on-screen blur — separate from the vault unlock concept. Shown
+  // only after unlock; before that, amounts are inherently hidden.
+  const showAmounts = isUnlocked && revealed;
 
   return (
     <section aria-label="Summary">
@@ -60,75 +54,70 @@ export function MetricsBand({ user }: { user: AuthUser }) {
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           At a glance
         </span>
-        <button
-          type="button"
-          onClick={() => setRevealed((r) => !r)}
-          aria-pressed={revealed}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium uppercase tracking-wider",
-            "text-muted-foreground transition-colors hover:text-foreground",
-            "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          )}
-        >
-          {revealed ? (
-            <>
-              <Eye className="size-3" strokeWidth={2.25} />
-              Amounts shown
-            </>
-          ) : (
-            <>
-              <EyeOff className="size-3" strokeWidth={2.25} />
-              Amounts hidden
-            </>
-          )}
-        </button>
+        {isUnlocked ? (
+          <button
+            type="button"
+            onClick={() => setRevealed((r) => !r)}
+            aria-pressed={revealed}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium uppercase tracking-wider",
+              "text-muted-foreground transition-colors hover:text-foreground",
+              "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            )}
+          >
+            {revealed ? (
+              <>
+                <Eye className="size-3" strokeWidth={2.25} />
+                Amounts shown
+              </>
+            ) : (
+              <>
+                <EyeOff className="size-3" strokeWidth={2.25} />
+                Amounts hidden
+              </>
+            )}
+          </button>
+        ) : isActive ? (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono tabular text-[11px] uppercase tracking-[0.2em] text-muted-foreground/70">
+            <Lock className="size-3" strokeWidth={2.25} />
+            Locked
+          </span>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
         {/* Hero tile — total received + sparkline */}
         <Tile
           className="md:col-span-3"
-          label="Private USDC balance"
+          label="Total received (private)"
           eyebrow={
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
-              <ShieldCheck className="size-3 text-success" strokeWidth={2.25} />
-              Only you can decrypt
-            </span>
+            isLoadingBalance ? (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
+                <Loader2 className="size-3 animate-spin text-primary" />
+                Decrypting balance…
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
+                <ShieldCheck className="size-3 text-success" strokeWidth={2.25} />
+                Only you can decrypt
+              </span>
+            )
           }
         >
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
               <AmountDisplay
-                amount={privateBalance}
-                hidden={!revealed}
+                amount={privateBalance ?? null}
+                hidden={!showAmounts}
                 size="xl"
                 className="leading-none"
               />
               <p className="mt-2 text-[12px] text-muted-foreground/80">
-                {getPrivateBalanceCopy({
-                  balanceState,
-                  isActive: user.umbraStatus === "active",
-                  hasBalance: privateBalance !== null,
-                })}
+                <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
+                across <span className="font-mono tabular">6</span> sub-handles
               </p>
             </div>
-            <button
-              type="button"
-              onClick={revealPrivateBalance}
-              disabled={isLoadingBalance || user.umbraStatus !== "active"}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium",
-                "text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground",
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              )}
-            >
-              {isLoadingBalance ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <ShieldCheck className="size-3" strokeWidth={2.25} />
-              )}
-              {privateBalance === null ? "Reveal" : "Refresh"}
-            </button>
+
           </div>
           <div className="mt-3 -mx-1 text-foreground/60">
             <ActivitySpark data={dailyFlow} height={44} />
@@ -149,7 +138,7 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             </span>
           }
         >
-          <AmountDisplay amount={metrics.monthToDate} hidden={!revealed} size="lg" />
+          <AmountDisplay amount={metrics.monthToDate} hidden={!showAmounts} size="lg" />
           <p className="mt-2 text-[12px] text-muted-foreground/80">
             <span className="font-mono tabular">{metrics.monthToDateCount}</span> payments
           </p>
@@ -166,7 +155,7 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             </span>
           }
         >
-          <AmountDisplay amount={metrics.pendingAmount} hidden={!revealed} size="lg" />
+          <AmountDisplay amount={metrics.pendingAmount} hidden={!showAmounts} size="lg" />
           <p className="mt-2 text-[12px] text-muted-foreground/80">
             <span className="font-mono tabular">{metrics.pendingClaims}</span> UTXO in flight
           </p>
@@ -192,25 +181,6 @@ export function MetricsBand({ user }: { user: AuthUser }) {
       </div>
     </section>
   );
-}
-
-function getPrivateBalanceCopy({
-  balanceState,
-  isActive,
-  hasBalance,
-}: {
-  balanceState: string | null;
-  isActive: boolean;
-  hasBalance: boolean;
-}) {
-  if (!isActive) return "Activate private payments to receive privately.";
-  if (hasBalance) return "Live encrypted balance in your Hush Vault.";
-  if (balanceState === "uninitialized" || balanceState === "non_existent") {
-    return "No private USDC deposits yet.";
-  }
-  if (balanceState === "mxe") return "Balance is encrypted in network mode.";
-  if (balanceState === "error") return "Could not decrypt balance. Try again.";
-  return "Unlock your vault to decrypt the current balance.";
 }
 
 function Tile({

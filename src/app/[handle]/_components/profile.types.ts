@@ -7,6 +7,7 @@ export type ProfileIdentity = {
   displayName: string | null;
   vaultPubkey: string;
   umbraStatus: UmbraStatus;
+  receiptEncryptionPublicKey: string;
   subPath?: string;
 };
 

@@ -6,21 +6,8 @@ import {
   getAddressFromPublicKey,
 } from "@solana/kit";
 import { useWallet } from "../contexts/wallet-context";
-
-function toBase64(bytes: Uint8Array) {
-  return btoa(String.fromCharCode(...bytes));
-}
-
-function fromBase64(value: string) {
-  return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-}
+import { fromBase64, toArrayBuffer, toBase64 } from "@/lib/bytes";
+import { generateReceiptEncryptionKeyPair } from "@/lib/receipts/crypto";
 
 const VAULT_KDF_SALT_PREFIX = "monyr-vault-salt";
 const VAULT_KDF_INFO_PREFIX = "monyr-vault-key";
@@ -50,6 +37,13 @@ function getPrivateKeyBytesFromPkcs8(pkcs8: Uint8Array): Uint8Array {
 
   return privateKeyBytes;
 }
+
+type EncryptedVaultPayloadV2 = {
+  version: 2;
+  vaultPrivateKeyPkcs8: string;
+  receiptEncryptionPrivateKey: string;
+  receiptEncryptionPublicKey: string;
+};
 
 function makeUnlockMessage(walletAddress: string): string {
   return [
@@ -152,13 +146,23 @@ export function useVault() {
       vault.privateKey,
     );
 
-    const encryptedVaultSecret = await encryptBytes(privateKeyBytes);
+    const receiptEncryptionKeyPair = await generateReceiptEncryptionKeyPair();
+    const encryptedVaultSecret = await encryptBytes(
+      new TextEncoder().encode(JSON.stringify({
+        version: 2,
+        vaultPrivateKeyPkcs8: toBase64(new Uint8Array(privateKeyBytes)),
+        receiptEncryptionPrivateKey: receiptEncryptionKeyPair.privateKey,
+        receiptEncryptionPublicKey: receiptEncryptionKeyPair.publicKey,
+      } satisfies EncryptedVaultPayloadV2)),
+    );
 
     const keyPairSigner = await createSignerFromKeyPair(vault);
 
     return {
       vaultPubkey: await getAddressFromPublicKey(vault.publicKey),
       encryptedVaultSecret,
+      receiptEncryptionPublicKey: receiptEncryptionKeyPair.publicKey,
+      receiptEncryptionPrivateKey: receiptEncryptionKeyPair.privateKey,
       ownerWalletAddress: walletAddress,
       keyPairSigner,
     };
@@ -168,10 +172,21 @@ export function useVault() {
     encryptedVaultSecret: string,
     expectedVaultPubkey?: string,
   ) {
-    const privateKeyPkcs8 = await decryptBytes(encryptedVaultSecret);
+    const payload = JSON.parse(
+      new TextDecoder().decode(await decryptBytes(encryptedVaultSecret)),
+    ) as EncryptedVaultPayloadV2;
+
+    if (
+      payload.version !== 2 ||
+      !payload.vaultPrivateKeyPkcs8 ||
+      !payload.receiptEncryptionPrivateKey ||
+      !payload.receiptEncryptionPublicKey
+    ) {
+      throw new Error("Invalid encrypted vault payload");
+    }
 
     const vault = await createKeyPairFromPrivateKeyBytes(
-      getPrivateKeyBytesFromPkcs8(new Uint8Array(privateKeyPkcs8)),
+      getPrivateKeyBytesFromPkcs8(fromBase64(payload.vaultPrivateKeyPkcs8)),
     );
     const keyPairSigner = await createSignerFromKeyPair(vault);
     const vaultPubkey = await getAddressFromPublicKey(vault.publicKey);
@@ -183,6 +198,8 @@ export function useVault() {
     return {
       vaultPubkey,
       keyPairSigner,
+      receiptEncryptionPrivateKey: payload.receiptEncryptionPrivateKey,
+      receiptEncryptionPublicKey: payload.receiptEncryptionPublicKey,
     };
   }
 

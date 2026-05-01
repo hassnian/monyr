@@ -39,6 +39,7 @@ export function ProfileCard({
   variant,
   vaultPubkey,
   umbraStatus,
+  receiptEncryptionPublicKey,
 }: Props) {
   const presets = variant.kind === "tipjar" ? (variant.presets ?? DEFAULT_PRESETS) : [];
   const isInvoice = variant.kind === "invoice";
@@ -225,6 +226,7 @@ export function ProfileCard({
         handle={handle}
         vaultPubkey={vaultPubkey}
         umbraStatus={umbraStatus}
+        receiptEncryptionPublicKey={receiptEncryptionPublicKey}
         displayName={displayName}
         amount={numericAmount}
         memo={memo || undefined}

@@ -16,7 +16,10 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, Loader2, Lock } from "
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
-import { recordPaymentReceipt } from "@/app/actions/payment-receipts";
+import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
+import { nativeAmount } from "@/lib/payments/amount";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { encryptReceiptPayload } from "@/lib/receipts/crypto";
 import UmbraRegister from "@/app/components/claim/UmbraRegister";
 import type { ProfileIdentity } from "./profile.types";
 
@@ -57,13 +60,32 @@ export function PayConfirmationModal({
   invoiceId,
   vaultPubkey,
   umbraStatus,
+  receiptEncryptionPublicKey,
 }: Props) {
   const isUmbraActive = umbraStatus === "active";
   const [step, setStep] = useState<Step>("confirm");
   const [completedRail, setCompletedRail] = useState<PaymentRail>("quick");
   const [receiptSignature, setReceiptSignature] = useState<string | null>(null);
   const { connectedWallet } = useWallet();
-  const { getUserAccount, isAccountFullyRegistered, depositAmount } = useUmbra();
+  const { getUserAccount, isAccountFullyRegistered, createReceiverClaimableUtxo } = useUmbra();
+
+  async function buildEncryptedReceiptPayload(receipt: {
+    rail: PaymentRail;
+    utxoCreateSignature: string;
+  }) {
+    return JSON.stringify(await encryptReceiptPayload(receiptEncryptionPublicKey, {
+      version: 1,
+      amountBaseUnits: nativeAmount(amount, solanaPaymentConfig.tokenDecimals).toString(),
+      tokenDecimals: solanaPaymentConfig.tokenDecimals,
+      mint: solanaPaymentConfig.usdcMint,
+      handle,
+      memo,
+      invoiceId,
+      subPath,
+      createdAt: new Date().toISOString(),
+      ...receipt,
+    }));
+  }
 
   useEffect(() => {
     if (!open) {
@@ -94,13 +116,6 @@ export function PayConfirmationModal({
       });
       const receiptSignature = String(result.signature);
       setReceiptSignature(receiptSignature);
-      await recordPaymentReceipt({
-        handle,
-        rail: "quick",
-        receiptSignature,
-      }).catch((error) => {
-        console.error("Failed to save payment receipt", error);
-      });
       setStep("success");
     } catch (error) {
       console.error("Quick Pay failed", error);
@@ -112,24 +127,19 @@ export function PayConfirmationModal({
     setCompletedRail("private");
     setStep("proving");
     try {
-      const result = await depositAmount({ amount, address: vaultPubkey });
-      const receiptSignature = String(result.callbackSignature ?? result.queueSignature);
-      setReceiptSignature(receiptSignature);
-      await recordPaymentReceipt({
-        handle,
+      const result = await createReceiverClaimableUtxo({ amount, address: vaultPubkey });
+      const utxoCreateSignature = String(result.signature);
+      setReceiptSignature(utxoCreateSignature);
+      const encryptedPayload = await buildEncryptedReceiptPayload({
         rail: "private",
-        receiptSignature,
-        queueSignature: String(result.queueSignature),
-        callbackSignature: result.callbackSignature
-          ? String(result.callbackSignature)
-          : undefined,
-        callbackStatus: result.callbackStatus,
-        callbackElapsedMs: result.callbackElapsedMs,
-        rentClaimSignature: result.rentClaimSignature
-          ? String(result.rentClaimSignature)
-          : undefined,
+        utxoCreateSignature,
+      });
+      await recordPaymentMetadata({
+        handle,
+        utxoCreateSignature,
+        encryptedPayload,
       }).catch((error) => {
-        console.error("Failed to save payment receipt", error);
+        console.error("Failed to save payment metadata", error);
       });
       setStep("success");
     } catch (error) {

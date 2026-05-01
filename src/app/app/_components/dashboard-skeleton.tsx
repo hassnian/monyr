@@ -18,6 +18,7 @@ export function DashboardSkeleton() {
       >
         <div className="flex flex-col gap-10">
           <IdentityStripSkeleton />
+          <LockedBannerSkeleton />
           <MetricsBandSkeleton />
           <QuickActionsSkeleton />
           <div className="h-px w-full bg-border/60" />
@@ -80,6 +81,34 @@ function IdentityStripSkeleton() {
           <Skeleton className="size-10 rounded-lg" />
           <Skeleton className="size-10 rounded-lg" />
         </div>
+      </div>
+    </section>
+  );
+}
+
+function LockedBannerSkeleton() {
+  // Mirrors LockedDashboardBanner so the swap is invisible for the common
+  // case (returning user, umbra active, vault not yet unlocked this session).
+  // Users without umbra active will see this collapse — acceptable on first
+  // load, but the steady-state experience stays jump-free.
+  return (
+    <section
+      aria-hidden
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-border-strong/60 bg-card/80 p-5 sm:p-6",
+        "shadow-[0_1px_0_0_rgba(255,255,255,0.025)_inset,0_24px_48px_-32px_rgba(0,0,0,0.5)]",
+      )}
+    >
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="flex items-start gap-4">
+          <Skeleton className="size-12 shrink-0 rounded-xl" />
+          <div className="min-w-0 space-y-1.5">
+            <Skeleton className="h-7 w-56 rounded" />
+            <Skeleton className="h-5 w-72 rounded" />
+            <Skeleton className="h-5 w-60 rounded" />
+          </div>
+        </div>
+        <Skeleton className="h-11 w-44 shrink-0 rounded-xl" />
       </div>
     </section>
   );

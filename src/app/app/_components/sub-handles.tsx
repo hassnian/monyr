@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { profile, subHandles, type SubHandle } from "../_data";
 
 import { formatDateShort } from "../_utils";
+import { PreviewEyebrow } from "./preview-eyebrow";
 
 /**
  * Per-client labels and invoices, rendered as editorial cards.
@@ -24,6 +25,7 @@ export function SubHandlesPane() {
 
   return (
     <div className="flex flex-col gap-10">
+      <PreviewEyebrow note="design preview · sub-handles not yet wired" />
       <Section
         title="Labels"
         caption="Per-client paths. Payments through /label group under a tab — you see the context, the payer sees the label."

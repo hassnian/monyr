@@ -21,6 +21,7 @@ export type AuthUser = {
   displayName: string | null;
   vaultPubkey: string;
   encryptedVaultSecret: string;
+  receiptEncryptionPublicKey: string;
   umbraStatus: UmbraStatus;
   bio: string | null;
 };
@@ -28,6 +29,8 @@ export type AuthUser = {
 export type UnlockedVault = {
   vaultPubkey: string;
   keyPairSigner: KeyPairSigner;
+  receiptEncryptionPrivateKey: string;
+  receiptEncryptionPublicKey: string;
 };
 
 type AuthContextType = {
@@ -120,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: row.displayName,
       vaultPubkey: row.vaultPubkey,
       encryptedVaultSecret: row.encryptedVaultSecret,
+      receiptEncryptionPublicKey: row.receiptEncryptionPublicKey,
       umbraStatus: row.umbraStatus,
       bio: row.bio,
     };

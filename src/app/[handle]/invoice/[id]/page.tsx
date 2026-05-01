@@ -43,6 +43,7 @@ export default async function HandleInvoicePage({
         displayName={profile.displayName}
         vaultPubkey={profile.vaultPubkey}
         umbraStatus={profile.umbraStatus}
+        receiptEncryptionPublicKey={profile.receiptEncryptionPublicKey}
         bio={profile.bio}
         variant={variant}
         // subPath={`invoice/${invoice.id}`}

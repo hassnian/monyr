@@ -14,6 +14,7 @@ import { MetricsBand } from "./metrics-band";
 import { QuickActions } from "./quick-actions";
 import { DashboardTabs } from "./dashboard";
 import { DashboardSkeleton } from "./dashboard-skeleton";
+import { LockedDashboardBanner } from "./locked-dashboard-banner";
 
 /**
  * Client shell for the dashboard. Handles the wallet/auth guard, loading
@@ -65,6 +66,7 @@ export function DashboardShell() {
       <main className="relative z-10 mx-auto w-full max-w-7xl px-6 pb-24 pt-10 md:px-10 md:pt-12">
         <div className="flex flex-col gap-10">
           <IdentityStrip user={user} onActivated={refresh} />
+          <LockedDashboardBanner />
           <MetricsBand user={user} />
           <QuickActions />
           <div className="h-px w-full bg-border/60" />

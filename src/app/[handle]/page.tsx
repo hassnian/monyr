@@ -40,6 +40,7 @@ export default async function HandleProfilePage({
         displayName={profile.displayName}
         vaultPubkey={profile.vaultPubkey}
         umbraStatus={profile.umbraStatus}
+        receiptEncryptionPublicKey={profile.receiptEncryptionPublicKey}
         bio={profile.bio}
         variant={{ kind: "tipjar" }}
       />
