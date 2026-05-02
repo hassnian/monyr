@@ -1,26 +1,42 @@
 "use client";
 
 import { useState } from "react";
+import { Lock } from "lucide-react";
+
 import { cn } from "@/lib/utils";
+import { useUnlockDashboard } from "@/app/hooks/useUnlockDashboard";
+
 import { Inbox } from "./inbox";
 import { Outbox } from "./outbox";
-import { SubHandlesPane } from "./sub-handles";
+import { InvoicesPane } from "./invoices";
+import { LabelsPane } from "./labels";
 import { ReceiptsPanel } from "./receipts";
 
-type TabValue = "inbox" | "outbox" | "sub-handles" | "receipts";
+type TabValue = "inbox" | "outbox" | "invoices" | "labels" | "receipts";
 
 /**
  * Tabbed surface rolling the main workstreams together. Tabs render inline
  * (not the shadcn pill variant) so the dashboard reads as one continuous
  * document — a ledger, not a control panel.
+ *
+ * When the dashboard is locked, tabs are hidden entirely and the surface
+ * collapses to a single locked card. There's nothing useful to switch to
+ * before unlock, and the unlock CTA already lives in the banner above.
  */
 export function DashboardTabs() {
   const [active, setActive] = useState<TabValue>("inbox");
   const [inboxCount, setInboxCount] = useState(0);
+  const { isLocked } = useUnlockDashboard();
+
+  if (isLocked) {
+    return <LockedActivityState />;
+  }
+
   const tabs = [
     { value: "inbox", label: "Inbox", count: inboxCount },
     { value: "outbox", label: "Outbox", count: null },
-    { value: "sub-handles", label: "Sub-handles", count: null },
+    { value: "invoices", label: "Invoices", count: null },
+    { value: "labels", label: "Labels", count: null },
     { value: "receipts", label: "Receipts", count: null },
   ] as const;
 
@@ -85,9 +101,44 @@ export function DashboardTabs() {
       >
         {active === "inbox" && <Inbox onCountChange={setInboxCount} />}
         {active === "outbox" && <Outbox />}
-        {active === "sub-handles" && <SubHandlesPane />}
+        {active === "invoices" && <InvoicesPane />}
+        {active === "labels" && <LabelsPane />}
         {active === "receipts" && <ReceiptsPanel />}
       </div>
+    </section>
+  );
+}
+
+function LockedActivityState() {
+  return (
+    <section
+      aria-label="Activity locked"
+      className={cn(
+        "relative flex flex-col items-center gap-3 overflow-hidden rounded-xl border border-dashed border-border bg-surface-raised/15 px-6 py-16 text-center",
+      )}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-x-12 -top-16 h-44 -z-10 blur-3xl opacity-60"
+        style={{
+          background:
+            "radial-gradient(40% 100% at 50% 0%, oklch(0.82 0.11 72 / 0.16), transparent 70%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/8 text-primary"
+      >
+        <Lock className="size-4" strokeWidth={2} />
+      </div>
+      <p className="font-serif text-xl italic text-foreground/85">
+        Your activity is locked.
+      </p>
+      <p className="max-w-md text-[13px] leading-relaxed text-muted-foreground/75">
+        Decryption keys live on your device. Use the{" "}
+        <span className="font-medium text-foreground/85">Unlock dashboard</span>{" "}
+        button above to see your inbox, invoices, and receipts.
+      </p>
     </section>
   );
 }

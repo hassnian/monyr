@@ -388,9 +388,9 @@ export function useUmbra() {
     // on the main thread and caused repeated browser freezes.
     const treeOffset = treeIndex * MAX_LEAVES_PER_TREE;
     const probe = await client.fetchUtxoData(
-      treeOffset,
-      treeOffset + MAX_LEAVES_PER_TREE - 1n,
-      1n,
+      treeOffset as U32,
+      (treeOffset + MAX_LEAVES_PER_TREE - 1n) as U32,
+      1n as U32,
     );
     const totalCount = BigInt(probe.totalCount ?? 0);
 
@@ -410,7 +410,7 @@ export function useUmbra() {
       { client },
       {
         fetchUtxoData: (startIndex, endIndex) =>
-          client.fetchUtxoData!(startIndex, endIndex, pageSize),
+          client.fetchUtxoData!(startIndex, endIndex, pageSize as U32),
       },
     );
 

@@ -9,6 +9,8 @@ import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { PayConfirmationModal } from "./pay-confirmation-modal";
+import { formatDecimalAmount } from "@/lib/payments/amount";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
@@ -58,9 +60,9 @@ export function ProfileCard({
   const isPayDisabled = !isInvoice && !canPay;
 
   const label = isInvoice
-    ? `Pay ${variant.amount.toFixed(2)} USDC`
+    ? `Pay ${formatDecimalAmount(variant.amount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC`
     : canPay
-      ? `Pay ${numericAmount.toFixed(2)} USDC`
+      ? `Pay ${formatDecimalAmount(numericAmount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC`
       : "Enter an amount";
 
   const isUmbraActive = umbraStatus === "active";

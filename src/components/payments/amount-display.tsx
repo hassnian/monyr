@@ -1,7 +1,14 @@
+import { formatBaseUnitsAmount, formatDecimalAmount, nativeAmount } from "@/lib/payments/amount";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
 
 type Props = {
+  /** Human/display amount, e.g. 0.001 USDC. Prefer amountBaseUnits when available. */
   amount: number | null;
+  /** Native/base units, e.g. 1000 for 0.001 USDC when decimals=6. */
+  amountBaseUnits?: bigint | string | number | null;
+  /** Native/base-unit decimals for this asset. USDC is 6. */
+  decimals?: number;
   currency?: string;
   hidden?: boolean;
   className?: string;
@@ -16,21 +23,33 @@ const sizeMap: Record<NonNullable<Props["size"]>, string> = {
   display: "text-6xl",
 };
 
-function formatAmount(amount: number) {
-  const fixed = amount.toFixed(2);
-  const [whole, fraction] = fixed.split(".");
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${grouped}.${fraction}`;
+function formatAmount({
+  amount,
+  amountBaseUnits,
+  decimals,
+}: Pick<Props, "amount" | "amountBaseUnits" | "decimals">) {
+  const tokenDecimals = decimals ?? solanaPaymentConfig.tokenDecimals;
+
+  if (amountBaseUnits !== undefined && amountBaseUnits !== null) {
+    return formatBaseUnitsAmount(amountBaseUnits, { decimals: tokenDecimals });
+  }
+
+  return formatDecimalAmount(amount!, { decimals: tokenDecimals });
 }
 
 export function AmountDisplay({
   amount,
+  amountBaseUnits,
+  decimals,
   currency = "USDC",
   hidden = false,
   className,
   size = "md",
 }: Props) {
-  const isEmpty = amount === null || hidden;
+  const nativeAmountValue =
+    amountBaseUnits ??
+    (amount === null ? null : nativeAmount(amount, decimals ?? solanaPaymentConfig.tokenDecimals));
+  const isEmpty = nativeAmountValue === null || hidden;
   return (
     <span
       className={cn(
@@ -40,7 +59,7 @@ export function AmountDisplay({
       )}
     >
       <span className={cn("text-foreground", isEmpty && "text-muted-foreground")}>
-        {isEmpty ? "••••" : formatAmount(amount!)}
+        {isEmpty ? "••••" : formatAmount({ amount, amountBaseUnits: nativeAmountValue, decimals })}
       </span>
       <span
         className="text-muted-foreground font-sans font-medium tracking-wide uppercase"

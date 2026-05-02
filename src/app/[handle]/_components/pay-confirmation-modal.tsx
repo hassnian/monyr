@@ -17,7 +17,7 @@ import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
-import { nativeAmount } from "@/lib/payments/amount";
+import { formatDecimalAmount, nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { encryptReceiptPayload } from "@/lib/receipts/crypto";
 import UmbraRegister from "@/app/components/claim/UmbraRegister";
@@ -350,7 +350,7 @@ function ConfirmStep({
           onClick={onPay}
           className="h-12 w-full rounded-xl text-base font-semibold ring-1 ring-primary/30 shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)] transition-all hover:bg-primary/90 hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]"
         >
-          Pay {amount.toFixed(2)} USDC
+          Pay {formatDecimalAmount(amount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC
         </Button>
 
         {isUmbraActive && (

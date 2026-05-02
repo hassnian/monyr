@@ -7,6 +7,7 @@ import { Eye, EyeOff, ShieldCheck, Clock, Loader2, Lock } from "lucide-react";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { cn } from "@/lib/utils";
 import { ActivitySpark } from "./activity-spark";
+import { DashboardSyncIndicator } from "./dashboard-sync-indicator";
 import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
@@ -50,39 +51,45 @@ export function MetricsBand({ user }: { user: AuthUser }) {
 
   return (
     <section aria-label="Summary">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           At a glance
         </span>
-        {isUnlocked ? (
-          <button
-            type="button"
-            onClick={() => setRevealed((r) => !r)}
-            aria-pressed={revealed}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium uppercase tracking-wider",
-              "text-muted-foreground transition-colors hover:text-foreground",
-              "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            )}
-          >
-            {revealed ? (
-              <>
-                <Eye className="size-3" strokeWidth={2.25} />
-                Amounts shown
-              </>
-            ) : (
-              <>
-                <EyeOff className="size-3" strokeWidth={2.25} />
-                Amounts hidden
-              </>
-            )}
-          </button>
-        ) : isActive ? (
-          <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono tabular text-[11px] uppercase tracking-[0.2em] text-muted-foreground/70">
-            <Lock className="size-3" strokeWidth={2.25} />
-            Locked
-          </span>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {isUnlocked && <DashboardSyncIndicator />}
+          {isUnlocked ? (
+            <>
+              <span aria-hidden className="mx-0.5 h-3 w-px bg-border/70" />
+              <button
+                type="button"
+                onClick={() => setRevealed((r) => !r)}
+                aria-pressed={revealed}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium uppercase tracking-wider",
+                  "text-muted-foreground transition-colors hover:text-foreground",
+                  "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                )}
+              >
+                {revealed ? (
+                  <>
+                    <Eye className="size-3" strokeWidth={2.25} />
+                    Amounts shown
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="size-3" strokeWidth={2.25} />
+                    Amounts hidden
+                  </>
+                )}
+              </button>
+            </>
+          ) : isActive ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono tabular text-[11px] uppercase tracking-[0.2em] text-muted-foreground/70">
+              <Lock className="size-3" strokeWidth={2.25} />
+              Locked
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
@@ -114,7 +121,7 @@ export function MetricsBand({ user }: { user: AuthUser }) {
               />
               <p className="mt-2 text-[12px] text-muted-foreground/80">
                 <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
-                across <span className="font-mono tabular">6</span> sub-handles
+                across <span className="font-mono tabular">6</span> labels & invoices
               </p>
             </div>
 

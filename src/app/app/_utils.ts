@@ -1,18 +1,10 @@
-/**
- * Static formatting helpers for the dashboard mocks.
- * `now` is a frozen reference point so "n hours ago" values don't drift with
- * real time — keeps SSR/CSR output identical.
- */
+/** Formatting helpers for the dashboard. */
 
-const NOW = new Date("2026-04-24T12:00:00Z").getTime();
-const NOW_DATE = new Date("2026-04-24T12:00:00Z");
 const DAY_MS = 86_400_000;
 
 function startOfUtcDay(d: Date): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
-
-const NOW_UTC_DAY = startOfUtcDay(NOW_DATE);
 
 export type DateBucket = "today" | "yesterday" | "thisWeek" | "earlier";
 
@@ -31,8 +23,9 @@ export const dateBucketLabels: Record<DateBucket, string> = {
 };
 
 export function dateBucket(iso: string): DateBucket {
+  const nowUtcDay = startOfUtcDay(new Date());
   const thenUtcDay = startOfUtcDay(new Date(iso));
-  const diffDays = Math.round((NOW_UTC_DAY - thenUtcDay) / DAY_MS);
+  const diffDays = Math.round((nowUtcDay - thenUtcDay) / DAY_MS);
   if (diffDays <= 0) return "today";
   if (diffDays === 1) return "yesterday";
   if (diffDays < 7) return "thisWeek";
@@ -41,7 +34,7 @@ export function dateBucket(iso: string): DateBucket {
 
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
-  const diffSec = Math.max(0, Math.round((NOW - then) / 1000));
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
   if (diffSec < 60) return "just now";
   const diffMin = Math.round(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;

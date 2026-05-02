@@ -11,9 +11,6 @@ import {
   Shield,
   Loader2,
   CircleAlert,
-  Lock,
-  RefreshCw,
-  CircleCheck,
 } from "lucide-react";
 
 import { GradientAvatar } from "@/components/payments/gradient-avatar";
@@ -24,10 +21,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import type { Payment } from "../_data";
+import { getMyPaymentMetadata } from "@/app/actions/payment-metadata";
 import { useAuth } from "@/app/contexts/auth-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { useUnlockDashboard } from "@/app/hooks/useUnlockDashboard";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { decryptReceiptPayload, type EncryptedReceiptPayload } from "@/lib/receipts/crypto";
 
 import {
   dateBucket,
@@ -42,53 +41,83 @@ import {
  * renders in italic serif to echo the figcaption voice from the landing page —
  * it's editorial, not log output.
  */
+type PaymentMetadataPayload = {
+  amountBaseUnits?: string;
+  memo?: string | null;
+  subPath?: string | null;
+  invoiceId?: string | null;
+  utxoCreateSignature?: string;
+  createdAt?: string;
+};
+
+function takeMatchingMetadata(
+  metadataByAmount: Map<string, PaymentMetadataPayload[]>,
+  amountBaseUnits: string,
+) {
+  const matches = metadataByAmount.get(amountBaseUnits);
+  return matches?.shift() ?? null;
+}
+
 export function Inbox({ onCountChange }: { onCountChange?: (count: number) => void }) {
   const [filter, setFilter] = useState<string>("all");
   const [query, setQuery] = useState<string>("");
 
   const { user, unlockedVault } = useAuth();
   const { scanRecentClaimableUtxos } = useUmbra();
-  const { isLocked, isUnlocked, isActive } = useUnlockDashboard();
+  const { isUnlocked, isActive } = useUnlockDashboard();
 
   const {
     data: payments = [],
     isFetching: loading,
-    refetch,
-    dataUpdatedAt,
-    error: queryError,
   } = useQuery<Payment[]>({
     enabled: isUnlocked && Boolean(unlockedVault),
     queryKey: ["inbox", "claimable", user?.handle, unlockedVault?.vaultPubkey],
     queryFn: async () => {
       if (!unlockedVault) return [];
-      const result = await scanRecentClaimableUtxos({
-        signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
-      });
+      const [result, metadataRows] = await Promise.all([
+        scanRecentClaimableUtxos({
+          signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
+        }),
+        getMyPaymentMetadata(),
+      ]);
+      const metadata = await Promise.all(
+        metadataRows.map(async (row) =>
+          decryptReceiptPayload<PaymentMetadataPayload>(
+            unlockedVault.receiptEncryptionPrivateKey,
+            JSON.parse(row.encryptedPayload) as EncryptedReceiptPayload,
+          ).catch(() => null),
+        ),
+      );
+      const metadataByAmount = metadata.reduce((map, payload) => {
+        if (!payload?.amountBaseUnits) return map;
+        const matches = map.get(payload.amountBaseUnits) ?? [];
+        matches.push(payload);
+        map.set(payload.amountBaseUnits, matches);
+        return map;
+      }, new Map<string, PaymentMetadataPayload[]>());
       const claimable = [...result.received, ...result.publicReceived];
-      return claimable.map((utxo) => ({
-        id: `${utxo.treeIndex}:${utxo.insertionIndex}`,
-        amount: Number(utxo.amount) / 10 ** solanaPaymentConfig.tokenDecimals,
-        memo: null,
-        payerLabel: null,
-        payerPubkey: null,
-        subPath: null,
-        subLabel: null,
-        createdAt: new Date().toISOString(),
-        status: "pending",
-        txSig: `${utxo.treeIndex}:${utxo.insertionIndex}`,
-      }));
+      return claimable.map((utxo) => {
+        const amountBaseUnits = utxo.amount.toString();
+        const metadata = takeMatchingMetadata(metadataByAmount, amountBaseUnits);
+
+        return {
+          id: `${utxo.treeIndex}:${utxo.insertionIndex}`,
+          amount: Number(utxo.amount) / 10 ** solanaPaymentConfig.tokenDecimals,
+          amountBaseUnits,
+          memo: metadata?.memo?.trim() || null,
+          payerLabel: null,
+          payerPubkey: null,
+          subPath: metadata?.subPath ?? null,
+          subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
+          createdAt: metadata?.createdAt ?? new Date().toISOString(),
+          status: "pending",
+          txSig: metadata?.utxoCreateSignature?.slice(0, 8) ?? `${utxo.treeIndex}:${utxo.insertionIndex}`,
+        } satisfies Payment;
+      });
     },
     staleTime: 60_000,
     retry: false,
   });
-
-  const lastRefreshedAt = useMemo(
-    () => (dataUpdatedAt ? new Date(dataUpdatedAt) : null),
-    [dataUpdatedAt],
-  );
-  const scanError = queryError
-    ? "Couldn't reach the network. Try refreshing."
-    : null;
 
   useEffect(() => {
     onCountChange?.(payments.length);
@@ -217,9 +246,7 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
       </div>
 
       {/* Body */}
-      {isLocked ? (
-        <LockedState />
-      ) : isInactive ? (
+      {isInactive ? (
         <InactiveState />
       ) : showSkeleton ? (
         <SkeletonList />
@@ -250,18 +277,6 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
         </div>
       )}
 
-      <StatusFooter
-        isLocked={isLocked}
-        isInactive={isInactive}
-        loading={loading}
-        lastRefreshedAt={lastRefreshedAt}
-        error={scanError}
-        shown={filtered.length}
-        total={payments.length}
-        onRefresh={() => {
-          refetch();
-        }}
-      />
     </div>
   );
 }
@@ -315,7 +330,13 @@ function PaymentRow({ payment }: { payment: Payment }) {
       </div>
 
       <div className="flex flex-col items-end gap-1">
-        <AmountDisplay amount={payment.amount} size="md" className="text-foreground" />
+        <AmountDisplay
+          amount={payment.amount}
+          amountBaseUnits={payment.amountBaseUnits}
+          decimals={solanaPaymentConfig.tokenDecimals}
+          size="md"
+          className="text-foreground"
+        />
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
           <span>{relativeTime(payment.createdAt)}</span>
           <span aria-hidden>·</span>
@@ -361,35 +382,6 @@ function StatusPill({ status }: { status: Payment["status"] }) {
       <CircleAlert className="size-3" strokeWidth={2.5} />
       Failed
     </span>
-  );
-}
-
-function LockedState() {
-  return (
-    <div className="relative flex flex-col items-center gap-3 overflow-hidden rounded-xl border border-dashed border-border bg-surface-raised/15 px-6 py-16 text-center">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -inset-x-12 -top-16 h-44 -z-10 blur-3xl opacity-60"
-        style={{
-          background:
-            "radial-gradient(40% 100% at 50% 0%, oklch(0.82 0.11 72 / 0.16), transparent 70%)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/8 text-primary"
-      >
-        <Lock className="size-4" strokeWidth={2} />
-      </div>
-      <p className="font-serif text-xl italic text-foreground/85">
-        Your inbox is locked.
-      </p>
-      <p className="max-w-md text-[13px] leading-relaxed text-muted-foreground/75">
-        Decryption keys live on your device. Use the{" "}
-        <span className="font-medium text-foreground/85">Unlock dashboard</span>{" "}
-        button at the top to see incoming payments.
-      </p>
-    </div>
   );
 }
 
@@ -454,129 +446,4 @@ function EmptyState({ filter, handle }: { filter: string; handle: string }) {
       </p>
     </div>
   );
-}
-
-function StatusFooter({
-  isLocked,
-  isInactive,
-  loading,
-  lastRefreshedAt,
-  error,
-  shown,
-  total,
-  onRefresh,
-}: {
-  isLocked: boolean;
-  isInactive: boolean;
-  loading: boolean;
-  lastRefreshedAt: Date | null;
-  error: string | null;
-  shown: number;
-  total: number;
-  onRefresh: () => void;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-
-  // Tick once a second so "X seconds ago" stays honest. Cheap; only one
-  // setInterval per inbox mount.
-  useEffect(() => {
-    if (!lastRefreshedAt) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [lastRefreshedAt]);
-
-  if (isInactive) return null;
-
-  if (isLocked) {
-    return (
-      <p className="flex items-center justify-center gap-2 pt-1 text-center font-mono tabular text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
-        <Lock className="size-3" strokeWidth={2.25} />
-        Locked
-        <span aria-hidden className="text-muted-foreground/30">·</span>
-        <span className="font-sans normal-case tracking-normal italic">
-          unlock to refresh your inbox
-        </span>
-      </p>
-    );
-  }
-
-  if (loading && !lastRefreshedAt) {
-    return (
-      <p className="flex items-center justify-center gap-2 pt-1 text-center font-mono tabular text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">
-        <Loader2 className="size-3 animate-spin text-primary" />
-        Decrypting your inbox…
-      </p>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-center text-[11.5px] text-destructive/85">
-        <CircleAlert className="size-3" strokeWidth={2.25} />
-        <span>{error}</span>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground/80 underline underline-offset-4 transition-colors hover:text-foreground"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-1 text-center font-mono tabular text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">
-      <span className="inline-flex items-center gap-1.5">
-        {loading ? (
-          <Loader2 className="size-3 animate-spin text-primary" />
-        ) : (
-          <CircleCheck className="size-3 text-success" strokeWidth={2.25} />
-        )}
-        {loading ? "Refreshing" : "Live"}
-      </span>
-      {lastRefreshedAt ? (
-        <>
-          <span aria-hidden className="text-muted-foreground/30">·</span>
-          <span className="font-sans normal-case tracking-normal text-muted-foreground/80">
-            {agoLabel(lastRefreshedAt, now)}
-          </span>
-        </>
-      ) : null}
-      <span aria-hidden className="text-muted-foreground/30">·</span>
-      <span className="font-sans normal-case tracking-normal text-muted-foreground/80">
-        {shown} of {total} shown
-      </span>
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={loading}
-        aria-label="Refresh inbox"
-        className={cn(
-          "ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground/80 transition-colors",
-          "hover:text-foreground hover:bg-surface-raised/40",
-          "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          "disabled:cursor-not-allowed disabled:opacity-60",
-          "font-sans normal-case tracking-normal",
-        )}
-      >
-        <RefreshCw
-          className={cn("size-3", loading && "animate-spin")}
-          strokeWidth={2.25}
-        />
-        Refresh
-      </button>
-    </div>
-  );
-}
-
-function agoLabel(when: Date, now: number) {
-  const diff = Math.max(0, Math.floor((now - when.getTime()) / 1000));
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  const m = Math.floor(diff / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
