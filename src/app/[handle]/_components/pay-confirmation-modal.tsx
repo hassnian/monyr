@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +66,9 @@ export function PayConfirmationModal({
   const [step, setStep] = useState<Step>("confirm");
   const [completedRail, setCompletedRail] = useState<PaymentRail>("quick");
   const [receiptSignature, setReceiptSignature] = useState<string | null>(null);
+  const quickPaymentInFlightRef = useRef(false);
+  const privateCheckInFlightRef = useRef(false);
+  const privateDepositInFlightRef = useRef(false);
   const { connectedWallet } = useWallet();
   const { getUserAccount, isAccountFullyRegistered, createReceiverClaimableUtxo } = useUmbra();
 
@@ -102,8 +105,9 @@ export function PayConfirmationModal({
 
 
   async function startQuickPay() {
-    if (!connectedWallet) return;
+    if (!connectedWallet || quickPaymentInFlightRef.current) return;
 
+    quickPaymentInFlightRef.current = true;
     setCompletedRail("quick");
     setStep("quick-sending");
 
@@ -120,10 +124,15 @@ export function PayConfirmationModal({
     } catch (error) {
       console.error("Quick Pay failed", error);
       setStep("confirm");
+    } finally {
+      quickPaymentInFlightRef.current = false;
     }
   }
 
   async function runPrivateDeposit() {
+    if (privateDepositInFlightRef.current) return;
+
+    privateDepositInFlightRef.current = true;
     setCompletedRail("private");
     setStep("proving");
     try {
@@ -138,6 +147,7 @@ export function PayConfirmationModal({
         handle,
         utxoCreateSignature,
         encryptedPayload,
+        contextPath: subPath,
       }).catch((error) => {
         console.error("Failed to save payment metadata", error);
       });
@@ -145,18 +155,27 @@ export function PayConfirmationModal({
     } catch (error) {
       console.error("Private Pay failed", error);
       setStep("confirm");
+    } finally {
+      privateDepositInFlightRef.current = false;
     }
   }
 
   async function startPrivatePay() {
+    if (privateCheckInFlightRef.current || privateDepositInFlightRef.current) return;
+
+    privateCheckInFlightRef.current = true;
     setCompletedRail("private");
     setStep("private-checking");
 
-    const account = await getUserAccount();
-    if (isAccountFullyRegistered(account)) {
-      await runPrivateDeposit();
-    } else {
-      setStep("register");
+    try {
+      const account = await getUserAccount();
+      if (isAccountFullyRegistered(account)) {
+        await runPrivateDeposit();
+      } else {
+        setStep("register");
+      }
+    } finally {
+      privateCheckInFlightRef.current = false;
     }
   }
 

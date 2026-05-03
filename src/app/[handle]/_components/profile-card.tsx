@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { Check, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { AmountInput } from "@/components/payments/amount-input";
 import { PayConfirmationModal } from "./pay-confirmation-modal";
 import { formatDecimalAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
@@ -43,7 +43,12 @@ export function ProfileCard({
   umbraStatus,
   receiptEncryptionPublicKey,
 }: Props) {
-  const presets = variant.kind === "tipjar" ? (variant.presets ?? DEFAULT_PRESETS) : [];
+  const presets =
+    variant.kind === "invoice"
+      ? []
+      : variant.kind === "tipjar"
+        ? (variant.presets ?? DEFAULT_PRESETS)
+        : DEFAULT_PRESETS;
   const isInvoice = variant.kind === "invoice";
 
   const [amount, setAmount] = useState<string>(isInvoice ? variant.amount.toFixed(2) : "");
@@ -134,7 +139,7 @@ export function ProfileCard({
             )}
             <HandleText
               handle={handle}
-              subPath={subPath}
+              subPath={isInvoice ? undefined : subPath}
               size="md"
               className="text-muted-foreground/80"
             />
@@ -231,7 +236,7 @@ export function ProfileCard({
         receiptEncryptionPublicKey={receiptEncryptionPublicKey}
         displayName={displayName}
         amount={numericAmount}
-        memo={memo || undefined}
+        memo={isInvoice ? variant.memoTemplate : memo || undefined}
         subPath={subPath}
         invoiceId={isInvoice ? variant.invoiceId : undefined}
       />
@@ -263,18 +268,6 @@ function TipJarBlock({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <label
-          htmlFor="amount"
-          className="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-        >
-          Amount
-        </label>
-        <span className="text-[11px] text-muted-foreground/70">
-          USDC · Solana
-        </span>
-      </div>
-
       <div className="grid grid-cols-4 gap-2">
         {presets.map((preset) => {
           const selected = numeric === preset;
@@ -311,26 +304,15 @@ function TipJarBlock({
         </button>
       </div>
 
-      <div className="relative">
-        <Input
-          id="amount"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => {
-            const v = e.target.value.replace(/[^\d.]/g, "");
-            setAmount(v);
-          }}
-          placeholder="0.00"
-          aria-describedby="amount-currency"
-          className="h-14 pl-4 pr-20 text-2xl font-mono tabular border-border-strong bg-surface-raised/30 placeholder:text-muted-foreground/40 focus-visible:ring-primary/30"
-        />
-        <span
-          id="amount-currency"
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground tracking-wide"
-        >
-          USDC
-        </span>
-      </div>
+      <AmountInput
+        variant="visitor"
+        id="amount"
+        label="Amount"
+        hint="USDC · Solana"
+        size="lg"
+        value={amount}
+        onValueChange={setAmount}
+      />
     </div>
   );
 }
@@ -357,14 +339,16 @@ function InvoiceBlock({
       <div className="rounded-xl border border-border-strong bg-surface-raised/40 p-5">
         <AmountDisplay amount={amount} size="xl" />
       </div>
-      <div>
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase mb-2">
-          For
-        </p>
-        <p className="text-sm leading-relaxed text-foreground/90 italic font-serif">
-          “{memo}”
-        </p>
-      </div>
+      {memo.trim() && (
+        <div>
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase mb-2">
+            For
+          </p>
+          <p className="text-sm leading-relaxed text-foreground/90 italic font-serif">
+            “{memo}”
+          </p>
+        </div>
+      )}
     </div>
   );
 }

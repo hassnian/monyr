@@ -1,24 +1,34 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+
+import { getHandle } from "@/app/actions/handles";
+import { getPublicPaymentContext } from "@/app/actions/payment-contexts";
 import { PageFrame } from "@/components/payments/page-frame";
 import { ProfileCard } from "../../_components/profile-card";
-import { getHandle } from "@/app/actions/handles";
 
 type Params = { handle: string; id: string };
+
+function getConfigNumber(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getConfigString(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  return typeof value === "string" ? value : "";
+}
+
+function isExpired(expiresAt: string) {
+  if (!expiresAt) return false;
+  const time = new Date(expiresAt).getTime();
+  return Number.isFinite(time) && time <= Date.now();
+}
 
 export default async function HandleInvoicePage({
   params,
 }: {
   params: Promise<Params>;
 }) {
-  // const { isPending, error, data } = useQuery({
-  //   queryKey: ["repoData"],
-  //   queryFn: () =>
-  //     fetch("https://api.github.com/repos/TanStack/query").then((res) =>
-  //       res.json(),
-  //     ),
-  // });
-
   const { handle: raw, id } = await params;
   const handle = decodeURIComponent(raw);
 
@@ -27,14 +37,18 @@ export default async function HandleInvoicePage({
   if (!/^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$/.test(bare)) notFound();
   if (!/^[a-z0-9]{4,16}$/i.test(id)) notFound();
 
-  const profile = await getHandle(bare)
+  const [profile, context] = await Promise.all([
+    getHandle(bare),
+    getPublicPaymentContext({ handle: bare, path: `invoice/${id}` }),
+  ]);
 
-  if (!profile) notFound()
+  if (!profile || !context || context.kind !== "invoice") notFound();
 
-  // const invoice = getMockInvoice(id);
-  //
-
-  const variant = { kind: 'tipjar' } as const
+  const amount = getConfigNumber(context.config, "amount");
+  if (amount === null || amount <= 0) notFound();
+  if (context.status === "expired" || isExpired(getConfigString(context.config, "expiresAt"))) {
+    notFound();
+  }
 
   return (
     <PageFrame glow>
@@ -45,15 +59,14 @@ export default async function HandleInvoicePage({
         umbraStatus={profile.umbraStatus}
         receiptEncryptionPublicKey={profile.receiptEncryptionPublicKey}
         bio={profile.bio}
-        variant={variant}
-        // subPath={`invoice/${invoice.id}`}
-        // variant={{
-        //   kind: "invoice",
-        //   invoiceId: invoice.id,
-        //   amount: invoice.amount,
-        //   memoTemplate: invoice.memo,
-        //   dueAt: invoice.dueAt,
-        // }}
+        subPath={context.path}
+        variant={{
+          kind: "invoice",
+          invoiceId: id,
+          amount,
+          memoTemplate: getConfigString(context.config, "memo"),
+          dueAt: getConfigString(context.config, "expiresAt") || undefined,
+        }}
       />
       <p className="relative z-10 mt-8 text-center text-[11px] text-muted-foreground/80 max-w-sm">
         This invoice is private. Only {profile.handle} will see the amount.{" "}

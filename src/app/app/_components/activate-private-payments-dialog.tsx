@@ -189,14 +189,13 @@ export function ActivatePrivatePaymentsDialog({
   const statusLine = activeStep ? STATUS_COPY[activeStep] : null;
 
   const buttonLabel = useMemo(() => {
-    if (isDone) return copied ? "Copied" : "Copy your payment link";
     if (!isWorking) {
       return unlockedVault?.vaultPubkey === user.vaultPubkey
         ? "Continue activation"
         : "Activate";
     }
     return statusLine ?? "Activating…";
-  }, [isDone, copied, isWorking, statusLine, unlockedVault, user.vaultPubkey]);
+  }, [isWorking, statusLine, unlockedVault, user.vaultPubkey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -219,9 +218,12 @@ export function ActivatePrivatePaymentsDialog({
         <div className="flex flex-col items-center gap-6 px-7 pb-7 pt-9">
           <div className="flex flex-col items-center gap-3 text-center">
             {isDone ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-primary/45 bg-primary/15 px-3 py-1 font-mono tabular text-[10px] uppercase tracking-[0.22em] text-primary">
-                <Check className="size-3" strokeWidth={2.5} />
-                Active
+              <span className="inline-flex items-center gap-2.5 font-mono text-[10px] uppercase tracking-[0.28em] text-primary/90">
+                <span className="relative flex size-1.5 items-center justify-center">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+                </span>
+                Live
               </span>
             ) : (
               <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-raised/40 px-3 py-1 font-mono tabular text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
@@ -253,50 +255,44 @@ export function ActivatePrivatePaymentsDialog({
             </p>
           )}
 
-          <div className="flex w-full flex-col items-center gap-3">
-            <Button
-              type="button"
-              onClick={isDone ? handleCopyPaymentLink : handleActivate}
-              disabled={isWorking}
-              className={cn(
-                "h-12 w-full rounded-xl bg-primary text-base font-semibold text-primary-foreground hover:bg-primary/90",
-                "ring-1 ring-primary/30 transition-all active:translate-y-px",
-                "shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)]",
-                "hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]",
-                "disabled:opacity-95 disabled:hover:bg-primary",
-              )}
-            >
-              {isWorking ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  <span
-                    key={buttonLabel}
-                    aria-live="polite"
-                    className="animate-[status-fade_360ms_ease-out]"
-                  >
-                    {buttonLabel}
-                  </span>
-                </>
-              ) : isDone ? (
-                <>
-                  {copied ? (
-                    <Check className="mr-2 size-4" strokeWidth={2.5} />
-                  ) : (
-                    <Copy className="mr-2 size-4" strokeWidth={2.25} />
-                  )}
-                  <span
-                    key={buttonLabel}
-                    aria-live="polite"
-                    className="animate-[status-fade_360ms_ease-out]"
-                  >
-                    {buttonLabel}
-                  </span>
-                </>
-              ) : (
-                buttonLabel
-              )}
-            </Button>
-            <style jsx>{`
+          <div className="flex w-full flex-col items-center gap-4">
+            {isDone ? (
+              <DoneSuccessBlock
+                handle={user.handle}
+                profileUrl={handleUrl(user.handle)}
+                copied={copied}
+                onCopy={handleCopyPaymentLink}
+              />
+            ) : (
+              <Button
+                type="button"
+                onClick={handleActivate}
+                disabled={isWorking}
+                className={cn(
+                  "h-12 w-full rounded-xl bg-primary text-base font-semibold text-primary-foreground hover:bg-primary/90",
+                  "ring-1 ring-primary/30 transition-all active:translate-y-px",
+                  "shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)]",
+                  "hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]",
+                  "disabled:opacity-95 disabled:hover:bg-primary",
+                )}
+              >
+                {isWorking ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    <span
+                      key={buttonLabel}
+                      aria-live="polite"
+                      className="animate-[status-fade_360ms_ease-out]"
+                    >
+                      {buttonLabel}
+                    </span>
+                  </>
+                ) : (
+                  buttonLabel
+                )}
+              </Button>
+            )}
+            <style jsx global>{`
               @keyframes status-fade {
                 from {
                   opacity: 0;
@@ -305,6 +301,26 @@ export function ActivatePrivatePaymentsDialog({
                 to {
                   opacity: 1;
                   transform: translateY(0);
+                }
+              }
+              @keyframes done-rise {
+                from {
+                  opacity: 0;
+                  transform: translateY(8px) scale(0.97);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0) scale(1);
+                }
+              }
+              @keyframes copy-pulse {
+                0% {
+                  opacity: 0.85;
+                  transform: scale(0.96);
+                }
+                100% {
+                  opacity: 0;
+                  transform: scale(1.04);
                 }
               }
             `}</style>
@@ -386,6 +402,95 @@ function ValueRow({
         </p>
       </div>
     </li>
+  );
+}
+
+function DoneSuccessBlock({
+  handle,
+  profileUrl,
+  copied,
+  onCopy,
+}: {
+  handle: string;
+  profileUrl: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="flex w-full flex-col items-center gap-4 animate-[done-rise_540ms_cubic-bezier(0.22,1,0.36,1)_both]">
+      <button
+        type="button"
+        onClick={onCopy}
+        className={cn(
+          "group relative w-full overflow-hidden rounded-xl border border-primary/35 bg-surface-raised/55 px-4 py-3.5 text-left",
+          "transition-all duration-200 ease-out",
+          "hover:border-primary/55 hover:bg-surface-raised/85",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        )}
+        aria-label={copied ? "Link copied" : `Copy your payment link, ${profileUrl}`}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(120% 90% at 0% 0%, oklch(0.82 0.11 72 / 0.10), transparent 60%)",
+          }}
+        />
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
+              Your payment link
+            </p>
+            <p className="truncate font-mono text-[15px] leading-tight">
+              <span className="text-muted-foreground/55">monyr.xyz/</span>
+              <span className="text-foreground/95">@{handle}</span>
+            </p>
+          </div>
+          <span
+            className={cn(
+              "relative grid size-9 shrink-0 place-items-center rounded-full border transition-all duration-200",
+              copied
+                ? "border-primary/60 bg-primary/20 text-primary scale-[1.06]"
+                : "border-primary/30 bg-primary/10 text-primary group-hover:border-primary/55 group-hover:bg-primary/15",
+            )}
+            aria-hidden
+          >
+            {copied ? (
+              <Check className="size-4" strokeWidth={2.5} />
+            ) : (
+              <Copy className="size-3.5" strokeWidth={2.25} />
+            )}
+          </span>
+        </div>
+        {copied && (
+          <span
+            key="copy-pulse"
+            aria-hidden
+            className="pointer-events-none absolute inset-0 animate-[copy-pulse_900ms_ease-out_forwards]"
+            style={{
+              background:
+                "radial-gradient(70% 60% at 50% 50%, oklch(0.82 0.11 72 / 0.20), transparent 70%)",
+            }}
+          />
+        )}
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {copied ? "Link copied to clipboard" : ""}
+      </span>
+      <a
+        href={`https://${profileUrl}`}
+        target="_blank"
+        rel="noreferrer"
+        className="group inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Open my page
+        <ArrowUpRight
+          className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+          strokeWidth={2}
+        />
+      </a>
+    </div>
   );
 }
 

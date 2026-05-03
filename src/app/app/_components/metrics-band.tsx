@@ -188,8 +188,14 @@ export function MetricsBand({ user }: { user: AuthUser }) {
                 <Skeleton className="inline-block h-3 w-44 align-middle bg-muted/50" />
               ) : (
                 <>
-                  <span className="font-mono tabular">{inboxSummary.totalReceivedCount}</span> payments ·
-                  across <span className="font-mono tabular">{inboxSummary.labelsAndInvoicesCount}</span> labels & invoices
+                  <span className="font-mono tabular">
+                    {showAmounts ? inboxSummary.totalReceivedCount : "••"}
+                  </span>{" "}
+                  payments · across{" "}
+                  <span className="font-mono tabular">
+                    {showAmounts ? inboxSummary.labelsAndInvoicesCount : "••"}
+                  </span>{" "}
+                  labels & invoices
                 </>
               )}
             </div>
@@ -225,7 +231,10 @@ export function MetricsBand({ user }: { user: AuthUser }) {
               <Skeleton className="inline-block h-3 w-20 align-middle bg-muted/50" />
             ) : (
               <>
-                <span className="font-mono tabular">{inboxSummary.monthToDateCount}</span> payments
+                <span className="font-mono tabular">
+                  {showAmounts ? inboxSummary.monthToDateCount : "••"}
+                </span>{" "}
+                payments
               </>
             )}
           </div>
@@ -254,7 +263,10 @@ export function MetricsBand({ user }: { user: AuthUser }) {
               <Skeleton className="inline-block h-3 w-20 align-middle bg-muted/50" />
             ) : (
               <>
-                <span className="font-mono tabular">{inboxSummary.pendingClaims}</span> incoming
+                <span className="font-mono tabular">
+                  {showAmounts ? inboxSummary.pendingClaims : "••"}
+                </span>{" "}
+                incoming
               </>
             )}
           </div>
@@ -273,8 +285,13 @@ export function MetricsBand({ user }: { user: AuthUser }) {
           {isInitialLoadingInbox ? (
             <Skeleton className="h-9 w-12 rounded-md bg-muted/60" />
           ) : (
-            <p className="font-serif text-4xl leading-none tracking-tight text-foreground">
-              {inboxSummary.activeLinks}
+            <p
+              className={cn(
+                "font-serif text-4xl leading-none tracking-tight",
+                showAmounts ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {showAmounts ? inboxSummary.activeLinks : "••"}
             </p>
           )}
           <p className="mt-2 text-[12px] text-muted-foreground/80">

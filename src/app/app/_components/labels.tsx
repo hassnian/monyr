@@ -1,44 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Copy, Tag } from "lucide-react";
 
+import { getMyPaymentContexts, type PaymentContext } from "@/app/actions/payment-contexts";
+import { useAuth } from "@/app/contexts/auth-context";
+import { useInboxPayments } from "@/app/hooks/useInboxPayments";
 import { handleUrl } from "@/lib/brand";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { HandleText } from "@/components/payments/handle-text";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { profile, subHandles, type SubHandle } from "../_data";
 import { formatDateShort } from "../_utils";
 
 import { CreateLabelDialog } from "./create-label-dialog";
-import { PreviewEyebrow } from "./preview-eyebrow";
+
+type LabelContext = PaymentContext & {
+  totalReceived: number;
+  paymentCount: number;
+};
 
 export function LabelsPane() {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { data: payments = [] } = useInboxPayments();
 
-  const labels = subHandles.filter((s) => s.kind === "custom");
+  const labelContextsQueryKey = ["payment-contexts", "label", user?.handle] as const;
+
+  const { data: contexts = [], isLoading } = useQuery({
+    queryKey: labelContextsQueryKey,
+    queryFn: () => getMyPaymentContexts("label"),
+    enabled: Boolean(user),
+  });
+
+  const labels = useMemo<LabelContext[]>(
+    () =>
+      contexts.map((context) => {
+        const labelPayments = payments.filter((payment) => payment.subPath === context.path);
+        return {
+          ...context,
+          totalReceived: labelPayments.reduce((sum, payment) => sum + payment.amount, 0),
+          paymentCount: labelPayments.length,
+        };
+      }),
+    [contexts, payments],
+  );
+
   const totalReceived = labels.reduce((sum, s) => sum + s.totalReceived, 0);
   const totalCount = labels.reduce((sum, s) => sum + s.paymentCount, 0);
+  const handle = user?.handle ?? "";
 
   return (
     <>
       <div className="flex flex-col gap-6">
-        <PreviewEyebrow note="design preview · labels not yet wired" />
-
         <Header
           totalReceived={totalReceived}
           totalCount={totalCount}
           labelCount={labels.length}
+          loading={isLoading}
           onCreate={() => setOpen(true)}
         />
 
-        {labels.length === 0 ? (
+        {isLoading ? (
+          <LabelsSkeleton />
+        ) : labels.length === 0 ? (
           <EmptyState onCreate={() => setOpen(true)} />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {labels.map((sub) => (
-              <LabelCard key={sub.id} sub={sub} />
+              <LabelCard key={sub.id} sub={sub} handle={handle} />
             ))}
           </div>
         )}
@@ -47,7 +80,14 @@ export function LabelsPane() {
       <CreateLabelDialog
         open={open}
         onOpenChange={setOpen}
-        handle={profile.handle}
+        handle={handle}
+        onCreated={(context) => {
+          queryClient.setQueryData<PaymentContext[]>(labelContextsQueryKey, (current = []) => {
+            if (current.some((item) => item.id === context.id)) return current;
+            return [...current, context];
+          });
+          void queryClient.invalidateQueries({ queryKey: labelContextsQueryKey });
+        }}
       />
     </>
   );
@@ -57,11 +97,13 @@ function Header({
   totalReceived,
   totalCount,
   labelCount,
+  loading,
   onCreate,
 }: {
   totalReceived: number;
   totalCount: number;
   labelCount: number;
+  loading?: boolean;
   onCreate: () => void;
 }) {
   return (
@@ -77,8 +119,13 @@ function Header({
       </div>
 
       <div className="flex items-stretch gap-2">
-        <Stat label="Received" amount={totalReceived} count={totalCount} />
-        <Stat label="Labels" count={labelCount} />
+        <Stat
+          label="Received"
+          amount={totalReceived}
+          count={totalCount}
+          loading={loading}
+        />
+        <Stat label="Labels" count={labelCount} loading={loading} />
         <button
           type="button"
           onClick={onCreate}
@@ -101,10 +148,12 @@ function Stat({
   label,
   amount,
   count,
+  loading,
 }: {
   label: string;
   amount?: number;
   count: number;
+  loading?: boolean;
 }) {
   return (
     <div className="flex flex-col justify-between rounded-lg border border-border bg-surface-raised/30 px-3 py-1.5 min-w-[120px]">
@@ -112,25 +161,35 @@ function Stat({
         {label}
       </span>
       <div className="flex items-baseline justify-between gap-2">
-        {amount !== undefined ? (
+        {loading ? (
+          <Skeleton
+            className={cn(
+              "bg-muted/60",
+              amount !== undefined ? "h-3.5 w-14" : "h-4 w-8",
+            )}
+          />
+        ) : amount !== undefined ? (
           <AmountDisplay amount={amount} size="sm" className="text-foreground" />
         ) : (
           <span className="font-mono tabular text-base text-foreground">
             {count}
           </span>
         )}
-        {amount !== undefined && (
-          <span className="font-mono tabular text-[10.5px] text-muted-foreground/70">
-            {count}
-          </span>
-        )}
+        {amount !== undefined &&
+          (loading ? (
+            <Skeleton className="h-2.5 w-4 bg-muted/60" />
+          ) : (
+            <span className="font-mono tabular text-[10.5px] text-muted-foreground/70">
+              {count}
+            </span>
+          ))}
       </div>
     </div>
   );
 }
 
-function LabelCard({ sub }: { sub: SubHandle }) {
-  const url = handleUrl(profile.handle, sub.subPath);
+function LabelCard({ sub, handle }: { sub: LabelContext; handle: string }) {
+  const url = handleUrl(handle, sub.path);
   return (
     <article
       className={cn(
@@ -141,13 +200,13 @@ function LabelCard({ sub }: { sub: SubHandle }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <HandleText
-            handle={profile.handle}
-            subPath={sub.subPath}
+            handle={handle}
+            subPath={sub.path}
             size="md"
             className="text-foreground"
           />
           <p className="mt-1 truncate text-[13px] font-medium text-muted-foreground">
-            {sub.displayLabel}
+            {sub.title}
           </p>
         </div>
         <CopyUrlMini url={url} />
@@ -162,7 +221,7 @@ function LabelCard({ sub }: { sub: SubHandle }) {
           <p className="mt-1 text-[11.5px] text-muted-foreground/70">
             <span className="font-mono tabular">{sub.paymentCount}</span>{" "}
             {sub.paymentCount === 1 ? "payment" : "payments"} · since{" "}
-            {formatDateShort(sub.createdAt)}
+            {formatDateShort(sub.createdAt.toISOString())}
           </p>
         </div>
         <ArrowRight
@@ -186,6 +245,42 @@ function CopyUrlMini({ url }: { url: string }) {
       <span className="truncate max-w-[140px]">{url}</span>
       <Copy className="size-3 shrink-0 text-muted-foreground/70" />
     </span>
+  );
+}
+
+function LabelsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {[0, 1, 2].map((i) => (
+        <LabelCardSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+function LabelCardSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card/80 p-5"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          <Skeleton className="h-4 w-36 bg-muted/60" />
+          <Skeleton className="h-3 w-44 bg-muted/50" />
+        </div>
+        <Skeleton className="h-6 w-32 rounded-md bg-muted/50" />
+      </div>
+
+      <div className="flex items-end justify-between gap-3 pt-1">
+        <div className="space-y-1.5">
+          <Skeleton className="h-2.5 w-16 bg-muted/60" />
+          <Skeleton className="h-7 w-28 bg-muted/60" />
+          <Skeleton className="h-3 w-40 bg-muted/50" />
+        </div>
+        <Skeleton className="size-4 bg-muted/50" />
+      </div>
+    </div>
   );
 }
 

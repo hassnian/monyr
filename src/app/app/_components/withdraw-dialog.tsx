@@ -19,8 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { AmountInput } from "@/components/payments/amount-input";
 import { fundVaultForUtxoCreation } from "@/app/actions/vault";
 import { useAuth } from "@/app/contexts/auth-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
@@ -275,17 +275,6 @@ export function WithdrawDialog({
     }
   }
 
-  function handleMax() {
-    if (availableBalanceBaseUnits === null || availableBalanceBaseUnits <= 0n) return;
-    const maxWithdrawal = getMaxWithdrawalAmountBaseUnits(availableBalanceBaseUnits);
-    setAmount(
-      formatBaseUnitsAmount(maxWithdrawal, {
-        decimals: TOKEN_DECIMALS,
-        fractionDigits: TOKEN_DECIMALS,
-      }).replace(/\.0+$/, ""),
-    );
-  }
-
   const headline = isDone ? "Funds are on the way." : "Send to your wallet.";
   const description = isDone
     ? "Confirmed on Solana. The funds are now in your connected wallet."
@@ -347,68 +336,19 @@ export function WithdrawDialog({
                 handleSubmit();
               }}
             >
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <label
-                    htmlFor="withdraw-amount"
-                    className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/85"
-                  >
-                    Amount
-                  </label>
-                  {availableBalance !== null && (
-                    <span className="text-[11px] text-muted-foreground/80">
-                      Available{" "}
-                      <span className="font-mono tabular text-foreground/85">
-                        {availableBalance.toFixed(2)}
-                      </span>
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    id="withdraw-amount"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) =>
-                      setAmount(e.target.value.replace(/[^0-9.]/g, ""))
-                    }
-                    placeholder="0.00"
-                    autoFocus
-                    disabled={isWithdrawing}
-                    className={cn(
-                      "h-11 px-3 pr-24 font-mono tabular text-base",
-                      overBalance &&
-                        "border-warning/60 focus-visible:ring-warning/40",
-                    )}
-                  />
-                  <div className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleMax}
-                      disabled={
-                        availableBalanceBaseUnits === null ||
-                        getMaxWithdrawalAmountBaseUnits(availableBalanceBaseUnits) <= 0n ||
-                        isWithdrawing
-                      }
-                      className={cn(
-                        "pointer-events-auto rounded-md border border-border/70 bg-surface-raised/60 px-1.5 py-0.5 font-mono tabular text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors",
-                        "hover:border-primary/40 hover:text-foreground",
-                        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border/70 disabled:hover:text-muted-foreground",
-                      )}
-                    >
-                      Max
-                    </button>
-                    <span className="font-mono tabular text-[10.5px] uppercase tracking-wider text-muted-foreground/80">
-                      USDC
-                    </span>
-                  </div>
-                </div>
-                {validationMessage && (
-                  <p className="text-[11.5px] text-warning">
-                    {validationMessage}
-                  </p>
-                )}
-              </div>
+              <AmountInput
+                variant="owner"
+                id="withdraw-amount"
+                label="Amount"
+                value={amount}
+                onValueChange={setAmount}
+                balance={availableBalance}
+                getMaxBaseUnits={getMaxWithdrawalAmountBaseUnits}
+                invalid={overBalance}
+                validationMessage={validationMessage}
+                autoFocus
+                disabled={isWithdrawing}
+              />
 
               <Summary
                 walletAddress={walletAddress}

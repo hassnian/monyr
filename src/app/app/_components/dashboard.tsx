@@ -114,31 +114,16 @@ function LockedActivityState() {
     <section
       aria-label="Activity locked"
       className={cn(
-        "relative flex flex-col items-center gap-3 overflow-hidden rounded-xl border border-dashed border-border bg-surface-raised/15 px-6 py-16 text-center",
+        "flex items-center justify-center gap-2.5 rounded-xl border border-dashed border-border/70 bg-surface-raised/10 px-6 py-8",
+        "text-[12.5px] text-muted-foreground/75",
       )}
     >
-      <div
+      <Lock
         aria-hidden
-        className="pointer-events-none absolute -inset-x-12 -top-16 h-44 -z-10 blur-3xl opacity-60"
-        style={{
-          background:
-            "radial-gradient(40% 100% at 50% 0%, oklch(0.82 0.11 72 / 0.16), transparent 70%)",
-        }}
+        className="size-3.5 text-muted-foreground/60"
+        strokeWidth={2.25}
       />
-      <div
-        aria-hidden
-        className="grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/8 text-primary"
-      >
-        <Lock className="size-4" strokeWidth={2} />
-      </div>
-      <p className="font-serif text-xl italic text-foreground/85">
-        Your activity is locked.
-      </p>
-      <p className="max-w-md text-[13px] leading-relaxed text-muted-foreground/75">
-        Decryption keys live on your device. Use the{" "}
-        <span className="font-medium text-foreground/85">Unlock dashboard</span>{" "}
-        button above to see your inbox, invoices, and receipts.
-      </p>
+      <span>Inbox, invoices, and receipts decrypt after unlock.</span>
     </section>
   );
 }

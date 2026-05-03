@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Copy,
@@ -9,37 +10,95 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 
+import { getMyPaymentContexts, type PaymentContext } from "@/app/actions/payment-contexts";
+import { useAuth } from "@/app/contexts/auth-context";
+import { useInboxPayments } from "@/app/hooks/useInboxPayments";
 import { handleUrl } from "@/lib/brand";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { profile, subHandles, type SubHandle } from "../_data";
 import { formatDateShort } from "../_utils";
 
 import { CreateInvoiceDialog } from "./create-invoice-dialog";
-import { PreviewEyebrow } from "./preview-eyebrow";
 
-type StatusFilter = "all" | "outstanding" | "paid";
+type StatusFilter = "all" | "outstanding" | "paid" | "expired";
+
+type InvoiceContext = PaymentContext & {
+  fixedAmount: number;
+  memoTemplate: string | null;
+  paid: boolean;
+  expired: boolean;
+  paidAmount: number;
+  expiresAt: string | null;
+};
+
+function getConfigNumber(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getConfigString(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isExpired(expiresAt: string | null) {
+  if (!expiresAt) return false;
+  const time = new Date(expiresAt).getTime();
+  return Number.isFinite(time) && time <= Date.now();
+}
 
 export function InvoicesPane() {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { data: payments = [] } = useInboxPayments();
+  const invoiceContextsQueryKey = ["payment-contexts", "invoice", user?.handle] as const;
 
-  const invoices = subHandles.filter((s) => s.kind === "invoice");
-  const outstanding = invoices.filter((s) => s.status !== "paid");
-  const paid = invoices.filter((s) => s.status === "paid");
+  const { data: contexts = [], isLoading } = useQuery({
+    queryKey: invoiceContextsQueryKey,
+    queryFn: () => getMyPaymentContexts("invoice"),
+    enabled: Boolean(user),
+  });
+
+  const invoices = useMemo<InvoiceContext[]>(
+    () =>
+      contexts.map((context) => {
+        const invoicePayments = payments.filter((payment) => payment.subPath === context.path);
+        const paidAmount = invoicePayments.reduce((sum, payment) => sum + payment.amount, 0);
+        const expiresAt = getConfigString(context.config, "expiresAt");
+        return {
+          ...context,
+          fixedAmount: getConfigNumber(context.config, "amount"),
+          memoTemplate: getConfigString(context.config, "memo"),
+          paid: context.status === "paid" || invoicePayments.length > 0,
+          expired: context.status === "expired" || isExpired(expiresAt),
+          paidAmount,
+          expiresAt,
+        };
+      }),
+    [contexts, payments],
+  );
+
+  const outstanding = invoices.filter((s) => !s.paid && !s.expired);
+  const paid = invoices.filter((s) => s.paid);
+  const expired = invoices.filter((s) => !s.paid && s.expired);
 
   const counts = {
     all: invoices.length,
     outstanding: outstanding.length,
     paid: paid.length,
+    expired: expired.length,
   } as const;
 
   const totalOutstanding = outstanding.reduce(
-    (sum, s) => sum + (s.fixedAmount ?? 0),
+    (sum, s) => sum + s.fixedAmount,
     0,
   );
-  const totalPaid = paid.reduce((sum, s) => sum + (s.fixedAmount ?? 0), 0);
+  const totalPaid = paid.reduce((sum, s) => sum + (s.paidAmount || s.fixedAmount), 0);
+  const totalExpired = expired.reduce((sum, s) => sum + s.fixedAmount, 0);
 
   const sections =
     filter === "outstanding"
@@ -60,38 +119,53 @@ export function InvoicesPane() {
               total: totalPaid,
             },
           ]
-        : [
-            {
-              key: "outstanding" as const,
-              label: "Outstanding",
-              invoices: outstanding,
-              total: totalOutstanding,
-            },
-            {
-              key: "paid" as const,
-              label: "Paid",
-              invoices: paid,
-              total: totalPaid,
-            },
-          ];
+        : filter === "expired"
+          ? [
+              {
+                key: "expired" as const,
+                label: "Expired",
+                invoices: expired,
+                total: totalExpired,
+              },
+            ]
+          : [
+              {
+                key: "outstanding" as const,
+                label: "Outstanding",
+                invoices: outstanding,
+                total: totalOutstanding,
+              },
+              {
+                key: "paid" as const,
+                label: "Paid",
+                invoices: paid,
+                total: totalPaid,
+              },
+              {
+                key: "expired" as const,
+                label: "Expired",
+                invoices: expired,
+                total: totalExpired,
+              },
+            ];
 
   const visibleSections = sections.filter((s) => s.invoices.length > 0);
+  const handle = user?.handle ?? "";
 
   return (
     <>
       <div className="flex flex-col gap-6">
-        <PreviewEyebrow note="design preview · invoices not yet wired" />
-
         <Header
           totalOutstanding={totalOutstanding}
           totalPaid={totalPaid}
           outstandingCount={outstanding.length}
           paidCount={paid.length}
+          loading={isLoading}
           onCreate={() => setOpen(true)}
         />
 
         <div className="flex flex-wrap items-center gap-1.5">
-          {(["all", "outstanding", "paid"] as const).map((opt) => {
+          {(["all", "outstanding", "paid", "expired"] as const).map((opt) => {
             const selected = filter === opt;
             return (
               <button
@@ -99,31 +173,39 @@ export function InvoicesPane() {
                 type="button"
                 onClick={() => setFilter(opt)}
                 aria-pressed={selected}
+                disabled={isLoading}
                 className={cn(
                   "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium capitalize transition-all",
                   "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                  "disabled:cursor-not-allowed disabled:opacity-70",
                   selected
                     ? "border-primary/45 bg-primary/10 text-primary"
                     : "border-border bg-surface-raised/40 text-muted-foreground hover:border-border-strong hover:text-foreground",
                 )}
               >
                 {opt}
-                <span
-                  className={cn(
-                    "rounded px-1 font-mono tabular text-[11px]",
-                    selected
-                      ? "bg-primary/15 text-primary"
-                      : "bg-border/40 text-muted-foreground/70",
-                  )}
-                >
-                  {counts[opt]}
-                </span>
+                {isLoading ? (
+                  <Skeleton className="h-3 w-3 rounded bg-muted/60" />
+                ) : (
+                  <span
+                    className={cn(
+                      "rounded px-1 font-mono tabular text-[11px]",
+                      selected
+                        ? "bg-primary/15 text-primary"
+                        : "bg-border/40 text-muted-foreground/70",
+                    )}
+                  >
+                    {counts[opt]}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {invoices.length === 0 ? (
+        {isLoading ? (
+          <InvoicesSkeleton />
+        ) : invoices.length === 0 ? (
           <EmptyState onCreate={() => setOpen(true)} />
         ) : visibleSections.length === 0 ? (
           <FilteredEmptyState filter={filter} />
@@ -159,7 +241,7 @@ export function InvoicesPane() {
                 >
                   {section.invoices.map((sub) => (
                     <li key={sub.id}>
-                      <InvoiceRow sub={sub} />
+                      <InvoiceRow sub={sub} handle={handle} />
                     </li>
                   ))}
                 </ol>
@@ -172,7 +254,14 @@ export function InvoicesPane() {
       <CreateInvoiceDialog
         open={open}
         onOpenChange={setOpen}
-        handle={profile.handle}
+        handle={handle}
+        onCreated={(context) => {
+          queryClient.setQueryData<PaymentContext[]>(invoiceContextsQueryKey, (current = []) => {
+            if (current.some((item) => item.id === context.id)) return current;
+            return [...current, context];
+          });
+          void queryClient.invalidateQueries({ queryKey: invoiceContextsQueryKey });
+        }}
       />
     </>
   );
@@ -183,12 +272,14 @@ function Header({
   totalPaid,
   outstandingCount,
   paidCount,
+  loading,
   onCreate,
 }: {
   totalOutstanding: number;
   totalPaid: number;
   outstandingCount: number;
   paidCount: number;
+  loading?: boolean;
   onCreate: () => void;
 }) {
   return (
@@ -207,9 +298,15 @@ function Header({
           label="Outstanding"
           amount={totalOutstanding}
           count={outstandingCount}
+          loading={loading}
           highlight
         />
-        <Stat label="Paid" amount={totalPaid} count={paidCount} />
+        <Stat
+          label="Paid"
+          amount={totalPaid}
+          count={paidCount}
+          loading={loading}
+        />
         <button
           type="button"
           onClick={onCreate}
@@ -233,11 +330,13 @@ function Stat({
   amount,
   count,
   highlight,
+  loading,
 }: {
   label: string;
   amount: number;
   count: number;
   highlight?: boolean;
+  loading?: boolean;
 }) {
   return (
     <div
@@ -252,18 +351,27 @@ function Stat({
         {label}
       </span>
       <div className="flex items-baseline justify-between gap-2">
-        <AmountDisplay amount={amount} size="sm" className="text-foreground" />
-        <span className="font-mono tabular text-[10.5px] text-muted-foreground/70">
-          {count}
-        </span>
+        {loading ? (
+          <Skeleton className="h-3.5 w-14 bg-muted/60" />
+        ) : (
+          <AmountDisplay amount={amount} size="sm" className="text-foreground" />
+        )}
+        {loading ? (
+          <Skeleton className="h-2.5 w-4 bg-muted/60" />
+        ) : (
+          <span className="font-mono tabular text-[10.5px] text-muted-foreground/70">
+            {count}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function InvoiceRow({ sub }: { sub: SubHandle }) {
-  const url = handleUrl(profile.handle, sub.subPath);
-  const paid = sub.status === "paid";
+function InvoiceRow({ sub, handle }: { sub: InvoiceContext; handle: string }) {
+  const url = handleUrl(handle, sub.path);
+  const paid = sub.paid;
+  const expired = sub.expired;
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -297,11 +405,11 @@ function InvoiceRow({ sub }: { sub: SubHandle }) {
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <h4 className="truncate font-serif text-[16px] leading-tight tracking-tight text-foreground">
-            {sub.displayLabel}
+            {sub.title}
           </h4>
           {!paid && (
             <span className="inline-flex shrink-0 items-center rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
-              Outstanding
+              {expired ? "Expired" : "Outstanding"}
             </span>
           )}
         </div>
@@ -333,7 +441,7 @@ function InvoiceRow({ sub }: { sub: SubHandle }) {
 
       <div className="flex flex-col items-end gap-1">
         <AmountDisplay
-          amount={sub.fixedAmount ?? 0}
+          amount={sub.fixedAmount}
           size="md"
           className="text-foreground"
         />
@@ -345,7 +453,7 @@ function InvoiceRow({ sub }: { sub: SubHandle }) {
                 strokeWidth={2}
               />
               <span className="uppercase tracking-wider text-[10px] text-muted-foreground/55">
-                {paid ? "Settled" : "Expires"}
+                {paid ? "Settled" : expired ? "Expired" : "Expires"}
               </span>
               <span className="font-mono tabular">
                 {formatDateShort(sub.expiresAt)}
@@ -364,6 +472,49 @@ function InvoiceRow({ sub }: { sub: SubHandle }) {
             <MoreHorizontal className="size-3.5" />
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InvoicesSkeleton() {
+  return (
+    <div className="flex flex-col gap-5">
+      <section aria-hidden>
+        <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
+          <Skeleton className="h-2.5 w-20 bg-muted/60" />
+          <div className="flex items-baseline gap-2">
+            <Skeleton className="h-2.5 w-4 bg-muted/60" />
+            <span aria-hidden className="text-muted-foreground/30">·</span>
+            <Skeleton className="h-2.5 w-16 bg-muted/60" />
+          </div>
+        </div>
+        <ol className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card/60">
+          {[0, 1, 2].map((i) => (
+            <li key={i}>
+              <InvoiceRowSkeleton />
+            </li>
+          ))}
+        </ol>
+      </section>
+    </div>
+  );
+}
+
+function InvoiceRowSkeleton() {
+  return (
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-4">
+      <Skeleton className="size-9 rounded-full bg-muted/60" />
+      <div className="min-w-0 space-y-2">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-44 bg-muted/60" />
+          <Skeleton className="h-3.5 w-16 rounded-sm bg-muted/50" />
+        </div>
+        <Skeleton className="h-3 w-56 bg-muted/50" />
+      </div>
+      <div className="flex flex-col items-end gap-2">
+        <Skeleton className="h-4 w-20 bg-muted/60" />
+        <Skeleton className="h-3 w-32 bg-muted/50" />
       </div>
     </div>
   );
@@ -405,8 +556,10 @@ function FilteredEmptyState({ filter }: { filter: StatusFilter }) {
       </p>
       <p className="max-w-md text-[12.5px] text-muted-foreground/70">
         {filter === "outstanding"
-          ? "Every invoice is settled. Quiet ledger."
-          : "No paid invoices yet."}
+          ? "Every invoice is settled or expired. Quiet ledger."
+          : filter === "expired"
+            ? "No expired invoices yet."
+            : "No paid invoices yet."}
       </p>
     </div>
   );

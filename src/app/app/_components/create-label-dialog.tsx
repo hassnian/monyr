@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  createLabelPaymentContext,
+  type PaymentContext,
+} from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
 import { HandleText } from "@/components/payments/handle-text";
 import { cn } from "@/lib/utils";
@@ -19,6 +23,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   handle: string;
+  onCreated?: (context: PaymentContext) => void;
 };
 
 type Phase = "form" | "creating" | "done";
@@ -34,10 +39,10 @@ function slugify(input: string) {
     .slice(0, 32);
 }
 
-export function CreateLabelDialog({ open, onOpenChange, handle }: Props) {
+export function CreateLabelDialog({ open, onOpenChange, handle, onCreated }: Props) {
   const [phase, setPhase] = useState<Phase>("form");
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+  const [customSlug, setCustomSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -46,7 +51,7 @@ export function CreateLabelDialog({ open, onOpenChange, handle }: Props) {
       const t = setTimeout(() => {
         setPhase("form");
         setName("");
-        setSlug("");
+        setCustomSlug("");
         setSlugTouched(false);
         setCopied(false);
       }, 150);
@@ -54,12 +59,7 @@ export function CreateLabelDialog({ open, onOpenChange, handle }: Props) {
     }
   }, [open]);
 
-  // Auto-derive slug from name until the user edits the slug field directly.
-  useEffect(() => {
-    if (!slugTouched) {
-      setSlug(slugify(name));
-    }
-  }, [name, slugTouched]);
+  const slug = slugTouched ? customSlug : slugify(name);
 
   const previewUrl = useMemo(
     () => (slug ? handleUrl(handle, slug) : handleUrl(handle, "label")),
@@ -72,8 +72,21 @@ export function CreateLabelDialog({ open, onOpenChange, handle }: Props) {
   async function handleCreate() {
     if (!canSubmit) return;
     setPhase("creating");
-    await new Promise((r) => setTimeout(r, 600));
-    setPhase("done");
+
+    try {
+      const context = await createLabelPaymentContext({
+        handle,
+        title: name.trim(),
+        path: slug,
+      });
+      setCustomSlug(context.path);
+      setSlugTouched(true);
+      onCreated?.(context);
+      setPhase("done");
+    } catch (error) {
+      console.error("Failed to create label", error);
+      setPhase("form");
+    }
   }
 
   function handleCopy() {
@@ -179,7 +192,7 @@ export function CreateLabelDialog({ open, onOpenChange, handle }: Props) {
                     value={slug}
                     onChange={(e) => {
                       setSlugTouched(true);
-                      setSlug(slugify(e.target.value));
+                      setCustomSlug(slugify(e.target.value));
                     }}
                     placeholder="acme"
                     className={cn(
@@ -327,7 +340,7 @@ function DonePanel({
       </div>
 
       <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
-        Mock preview · label creation isn&apos;t wired up yet.
+        Label creation is wired to your payable path.
       </p>
     </div>
   );

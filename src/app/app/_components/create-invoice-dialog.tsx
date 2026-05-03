@@ -19,6 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { AmountInput } from "@/components/payments/amount-input";
+import {
+  createInvoicePaymentContext,
+  type PaymentContext,
+} from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +31,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   handle: string;
+  onCreated?: (context: PaymentContext) => void;
 };
 
 type Phase = "form" | "creating" | "done";
@@ -37,18 +43,14 @@ const EXPIRY_OPTIONS = [
   { value: 60, label: "60 days" },
 ] as const;
 
-function randomSlug() {
-  return Math.random().toString(36).slice(2, 6);
-}
-
-export function CreateInvoiceDialog({ open, onOpenChange, handle }: Props) {
+export function CreateInvoiceDialog({ open, onOpenChange, handle, onCreated }: Props) {
   const [phase, setPhase] = useState<Phase>("form");
   const [client, setClient] = useState("");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
   const [expiryDays, setExpiryDays] = useState<number>(30);
   const [copied, setCopied] = useState(false);
-  const [slug] = useState(() => randomSlug());
+  const [createdPath, setCreatedPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -59,6 +61,7 @@ export function CreateInvoiceDialog({ open, onOpenChange, handle }: Props) {
         setMemo("");
         setExpiryDays(30);
         setCopied(false);
+        setCreatedPath(null);
       }, 150);
       return () => clearTimeout(t);
     }
@@ -69,8 +72,8 @@ export function CreateInvoiceDialog({ open, onOpenChange, handle }: Props) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [amount]);
 
-  const subPath = `invoice/${slug}`;
-  const previewUrl = handleUrl(handle, subPath);
+  const previewPath = createdPath ?? "invoice/new";
+  const previewUrl = handleUrl(handle, previewPath);
 
   const expiresAtLabel = useMemo(() => {
     const d = new Date();
@@ -82,10 +85,24 @@ export function CreateInvoiceDialog({ open, onOpenChange, handle }: Props) {
     phase === "form" && client.trim().length > 0 && numericAmount !== null;
 
   async function handleCreate() {
-    if (!canSubmit) return;
+    if (!canSubmit || numericAmount === null) return;
     setPhase("creating");
-    await new Promise((r) => setTimeout(r, 700));
-    setPhase("done");
+
+    try {
+      const context = await createInvoicePaymentContext({
+        handle,
+        client: client.trim(),
+        amount: numericAmount,
+        memo: memo.trim() || null,
+        expiryDays: expiryDays as 7 | 14 | 30 | 60,
+      });
+      setCreatedPath(context.path);
+      onCreated?.(context);
+      setPhase("done");
+    } catch (error) {
+      console.error("Failed to create invoice", error);
+      setPhase("form");
+    }
   }
 
   function handleCopy() {
@@ -168,23 +185,16 @@ export function CreateInvoiceDialog({ open, onOpenChange, handle }: Props) {
                 />
               </Field>
 
-              <Field label="Amount" htmlFor="invoice-amount">
-                <div className="relative">
-                  <Input
-                    id="invoice-amount"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) =>
-                      setAmount(e.target.value.replace(/[^0-9.]/g, ""))
-                    }
-                    placeholder="0.00"
-                    className="h-10 px-3 pr-16 font-mono tabular text-sm"
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono tabular text-[10.5px] uppercase tracking-wider text-muted-foreground/80">
-                    USDC
-                  </span>
-                </div>
-              </Field>
+              <AmountInput
+                variant="visitor"
+                id="invoice-amount"
+                label="Amount"
+                hint="The client pays this on claim"
+                value={amount}
+                onValueChange={setAmount}
+                disabled={phase !== "form"}
+              />
+
 
               <Field label="Memo" htmlFor="invoice-memo" hint="Optional. Pre-filled for the payer.">
                 <Textarea
@@ -399,10 +409,6 @@ function DonePanel({
           </span>
         </button>
       </div>
-
-      <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
-        Mock preview · invoice creation isn&apos;t wired up yet.
-      </p>
     </div>
   );
 }

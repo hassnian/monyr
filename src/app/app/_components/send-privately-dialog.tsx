@@ -20,11 +20,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
+import { usePrivateBalance } from "@/app/hooks/usePrivateBalance";
 import { appUrl } from "@/lib/brand";
+
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -75,10 +77,21 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [amount]);
 
+  const { balance: privateBalance, isLoading: isLoadingBalance } =
+    usePrivateBalance();
+  const overBalance =
+    numericAmount !== null &&
+    privateBalance !== null &&
+    numericAmount > privateBalance;
+
   const recipientValid = mode === "handle" ? isValidHandle(recipient) : true;
   const ackOk = mode === "link" ? acknowledged : true;
   const canSubmit =
-    phase === "form" && numericAmount !== null && recipientValid && ackOk;
+    phase === "form" &&
+    numericAmount !== null &&
+    !overBalance &&
+    recipientValid &&
+    ackOk;
 
   const linkUrl = useMemo(() => appUrl(`/c/${linkId}`), [linkId]);
 
@@ -222,24 +235,24 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
                 </Field>
               )}
 
-              <Field label="Amount" htmlFor="send-amount">
-                <div className="relative">
-                  <Input
-                    id="send-amount"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) =>
-                      setAmount(e.target.value.replace(/[^0-9.]/g, ""))
-                    }
-                    placeholder="0.00"
-                    className="h-10 px-3 pr-16 font-mono tabular text-sm"
-                    autoFocus={mode === "link"}
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono tabular text-[10.5px] uppercase tracking-wider text-muted-foreground/80">
-                    USDC
-                  </span>
-                </div>
-              </Field>
+              <AmountInput
+                variant="owner"
+                id="send-amount"
+                label="Amount"
+                value={amount}
+                onValueChange={setAmount}
+                balance={privateBalance}
+                isLoadingBalance={isLoadingBalance}
+                invalid={overBalance}
+                validationMessage={
+                  overBalance
+                    ? "Amount exceeds your private balance."
+                    : null
+                }
+                autoFocus={mode === "link"}
+                disabled={isSending}
+              />
+
 
               <Field
                 label="Memo"
@@ -564,7 +577,7 @@ function DonePanel({
                 : "border-primary/40 bg-primary/[0.06] hover:border-primary/60 hover:bg-primary/[0.10]",
             )}
           >
-            <span className="truncate font-mono tabular text-[12.5px] text-foreground">
+            <span className="min-w-0 truncate font-mono tabular text-[12.5px] text-foreground">
               {linkUrl}
             </span>
             <span
