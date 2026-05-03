@@ -25,7 +25,10 @@ import { getDb } from "@/db/drizzle";
 import { handles } from "@/db/schema";
 import { getOwnerWalletLookup } from "@/lib/auth/owner-wallet";
 import { requireWalletSession } from "@/lib/auth/session";
-import { VAULT_SPONSOR_LAMPORTS } from "@/lib/vault/constants";
+import {
+  UTXO_CREATION_SPONSOR_LAMPORTS,
+  VAULT_SPONSOR_LAMPORTS,
+} from "@/lib/vault/constants";
 
 async function getSponsorSigner() {
   const secretKey = bs58.decode(process.env.SOLANA_SECRET_KEY_BASE58!);
@@ -89,7 +92,7 @@ export async function getVaultBalance(vaultAddress: string) {
   return { lamports: balance.value.toString() };
 }
 
-export async function sponsorVaultForUmbraActivation(vaultAddress: string) {
+async function requireOwnedVault(vaultAddress: string) {
   const session = await requireWalletSession();
 
   const ownedVault = await getDb().select({
@@ -109,6 +112,12 @@ export async function sponsorVaultForUmbraActivation(vaultAddress: string) {
     throw new Error("Unauthorized");
   }
 
+  return vault;
+}
+
+export async function sponsorVaultForUmbraActivation(vaultAddress: string) {
+  const vault = await requireOwnedVault(vaultAddress);
+
   if (vault.umbraStatus === "active") {
     throw new Error("Vault is already active");
   }
@@ -122,4 +131,22 @@ export async function sponsorVaultForUmbraActivation(vaultAddress: string) {
   }
 
   return sendSol(vaultAddress, neededLamports);
+}
+
+export async function fundVaultForUtxoCreation(vaultAddress: string) {
+  await requireOwnedVault(vaultAddress);
+
+  const balance = await getVaultBalance(vaultAddress);
+  const currentLamports = BigInt(balance.lamports);
+  const neededLamports = UTXO_CREATION_SPONSOR_LAMPORTS - currentLamports;
+
+  if (neededLamports <= 0n) {
+    return { signature: null, lamports: "0" };
+  }
+
+  return sendSol(vaultAddress, neededLamports);
+}
+
+export async function fundUtxoCreation(vaultAddress: string) {
+  return fundVaultForUtxoCreation(vaultAddress);
 }

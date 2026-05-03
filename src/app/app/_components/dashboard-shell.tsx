@@ -68,7 +68,7 @@ export function DashboardShell() {
           <IdentityStrip user={user} onActivated={refresh} />
           <LockedDashboardBanner />
           <MetricsBand user={user} />
-          <QuickActions />
+          <QuickActions handle={user.handle} />
           <div className="h-px w-full bg-border/60" />
           <DashboardTabs />
         </div>

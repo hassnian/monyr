@@ -3,12 +3,22 @@
 import { useState } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff, ShieldCheck, Clock, Loader2, Lock } from "lucide-react";
+import {
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Clock,
+  Loader2,
+  Lock,
+} from "lucide-react";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { cn } from "@/lib/utils";
 import { ActivitySpark } from "./activity-spark";
 import { DashboardSyncIndicator } from "./dashboard-sync-indicator";
+import { WithdrawDialog } from "./withdraw-dialog";
 import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
+import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { dailyFlow, metrics } from "../_data";
@@ -22,7 +32,9 @@ import { dailyFlow, metrics } from "../_data";
  */
 export function MetricsBand({ user }: { user: AuthUser }) {
   const [revealed, setRevealed] = useState(true);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const { unlockedVault } = useAuth();
+  const { account } = useWallet();
   const { getPrivateUsdcBalance } = useUmbra();
 
   const isActive = user.umbraStatus === "active";
@@ -37,9 +49,19 @@ export function MetricsBand({ user }: { user: AuthUser }) {
       const result = await getPrivateUsdcBalance({
         signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
       });
-      return result.state === "shared"
-        ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
-        : null;
+      const balance =
+        result.state === "shared"
+          ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
+          : null;
+
+      console.info("[Umbra] Private balance query completed", {
+        vaultPubkey: unlockedVault.vaultPubkey,
+        state: result.state,
+        rawBalance: result.state === "shared" ? result.balance.toString() : null,
+        balance,
+      });
+
+      return balance;
     },
     staleTime: 30_000,
     retry: false,
@@ -48,6 +70,12 @@ export function MetricsBand({ user }: { user: AuthUser }) {
   // Cosmetic on-screen blur — separate from the vault unlock concept. Shown
   // only after unlock; before that, amounts are inherently hidden.
   const showAmounts = isUnlocked && revealed;
+
+  const canWithdraw =
+    isUnlocked &&
+    !isLoadingBalance &&
+    privateBalance != null &&
+    privateBalance > 0;
 
   return (
     <section aria-label="Summary">
@@ -111,20 +139,37 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             )
           }
         >
-          <div className="flex items-end justify-between gap-4">
-            <div className="min-w-0">
-              <AmountDisplay
-                amount={privateBalance ?? null}
-                hidden={!showAmounts}
-                size="xl"
-                className="leading-none"
-              />
-              <p className="mt-2 text-[12px] text-muted-foreground/80">
-                <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
-                across <span className="font-mono tabular">6</span> labels & invoices
-              </p>
-            </div>
+          <button
+            type="button"
+            onClick={() => setWithdrawOpen(true)}
+            disabled={!canWithdraw}
+            aria-label="Withdraw to wallet"
+            className={cn(
+              "group absolute right-5 top-5 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-all",
+              "border-border bg-surface-raised/40 text-foreground/90",
+              "hover:border-primary/40 hover:bg-primary/[0.06] hover:text-foreground",
+              "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              "disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-border disabled:hover:bg-surface-raised/40 disabled:hover:text-foreground/90",
+            )}
+          >
+            <ArrowUpRight
+              className="size-3.5 text-muted-foreground transition-colors group-hover:not-disabled:text-primary"
+              strokeWidth={2.25}
+            />
+            Withdraw
+          </button>
 
+          <div className="min-w-0">
+            <AmountDisplay
+              amount={privateBalance ?? null}
+              hidden={!showAmounts}
+              size="xl"
+              className="leading-none"
+            />
+            <p className="mt-2 text-[12px] text-muted-foreground/80">
+              <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
+              across <span className="font-mono tabular">6</span> labels & invoices
+            </p>
           </div>
           <div className="mt-3 -mx-1 text-foreground/60">
             <ActivitySpark data={dailyFlow} height={44} />
@@ -186,6 +231,13 @@ export function MetricsBand({ user }: { user: AuthUser }) {
           </p>
         </Tile>
       </div>
+
+      <WithdrawDialog
+        open={withdrawOpen}
+        onOpenChange={setWithdrawOpen}
+        availableBalance={privateBalance ?? null}
+        walletAddress={account?.address ?? null}
+      />
     </section>
   );
 }

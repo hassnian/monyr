@@ -5,6 +5,10 @@ import {
   getEncryptedBalanceQuerierFunction,
   getPublicBalanceToReceiverClaimableUtxoCreatorFunction,
   getClaimableUtxoScannerFunction,
+  getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
+  getEncryptedBalanceToSelfClaimableUtxoCreatorFunction,
+  getSelfClaimableUtxoToPublicBalanceClaimerFunction,
+  getUmbraRelayer,
 } from "@umbra-privacy/sdk";
 import {
   type IUmbraClient,
@@ -13,7 +17,10 @@ import {
 } from "@umbra-privacy/sdk/interfaces";
 import {
   getCdnZkAssetProvider,
+  getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
+  getClaimSelfClaimableUtxoIntoPublicBalanceProver,
   getCreateReceiverClaimableUtxoFromPublicBalanceProver,
+  getCreateSelfClaimableUtxoFromEncryptedBalanceProver,
   getUserRegistrationProver,
 } from "@umbra-privacy/web-zk-prover";
 import { useRef } from "react";
@@ -30,6 +37,16 @@ import {
 import { nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { U32, U64 } from "@umbra-privacy/sdk/types";
+import {
+  clearWithdrawalGenerationIndex,
+  getOrCreateWithdrawalGenerationIndex,
+  getSolBalanceLamports,
+  getWithdrawalGenerationStorageKey,
+  hasPendingWithdrawalGeneration,
+  MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS,
+  reclaimStaleUmbraWithdrawalProofAccounts,
+  serializeErrorForLog,
+} from "./umbra-withdrawal-recovery";
 
 const isMainnet =
   solanaPaymentConfig.chain === "solana:mainnet" ||
@@ -46,6 +63,9 @@ const UMBRA_CLIENT_CONFIG = {
   indexerApiEndpoint: isMainnet
     ? "https://utxo-indexer.api.umbraprivacy.com"
     : "https://utxo-indexer.api-devnet.umbraprivacy.com",
+  relayerApiEndpoint: isMainnet
+    ? "https://relayer.api.umbraprivacy.com"
+    : "https://relayer.api-devnet.umbraprivacy.com",
   deferMasterSeedSignature: true,
 } as const;
 
@@ -53,9 +73,43 @@ type UmbraUserAccount = Awaited<
   ReturnType<ReturnType<typeof getUserAccountQuerierFunction>>
 >;
 
+type UmbraClaimableUtxoScanResult = Awaited<
+  ReturnType<ReturnType<typeof getClaimableUtxoScannerFunction>>
+>;
+
+export type UmbraClaimableUtxo = UmbraClaimableUtxoScanResult["received"][number];
+export type UmbraSelfClaimableUtxo = UmbraClaimableUtxoScanResult["selfBurnable"][number];
+
 const MAX_LEAVES_PER_TREE = 2n ** 20n;
 const DASHBOARD_SCAN_WINDOW_SIZE = 500n;
 const DASHBOARD_SCAN_PAGE_SIZE = 50n;
+const WITHDRAWAL_SELF_CLAIMABLE_SCAN_ATTEMPTS = 8;
+const WITHDRAWAL_SELF_CLAIMABLE_SCAN_DELAY_MS = 4_000;
+
+function getUmbraZkAssetProvider() {
+  return getCdnZkAssetProvider({
+    baseUrl: "/api/umbra-zk",
+    manifestUrl: "/api/umbra-zk/manifest.json",
+  });
+}
+
+function formatUmbraUtxoForLog(utxo: UmbraClaimableUtxo | UmbraSelfClaimableUtxo) {
+  return {
+    amount: utxo.amount.toString(),
+    destinationAddress: utxo.destinationAddress,
+    treeIndex: utxo.treeIndex.toString(),
+    insertionIndex: utxo.insertionIndex.toString(),
+    unlockerType: utxo.unlockerType,
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getUmbraUtxoId(utxo: UmbraClaimableUtxo | UmbraSelfClaimableUtxo) {
+  return `${utxo.treeIndex.toString()}:${utxo.insertionIndex.toString()}`;
+}
 
 function errorChainIncludes(error: unknown, text: string) {
   let current: unknown = error;
@@ -73,6 +127,17 @@ function errorChainIncludes(error: unknown, text: string) {
   }
 
   return false;
+}
+
+export function isUmbraUtxoAlreadySpentError(error: unknown) {
+  return (
+    errorChainIncludes(error, "NullifierAlreadyBurnt") ||
+    errorChainIncludes(error, "DuplicateNullifier") ||
+    errorChainIncludes(error, "nullifier already burnt") ||
+    errorChainIncludes(error, "Duplicate nullifier") ||
+    errorChainIncludes(error, "already spent") ||
+    errorChainIncludes(error, "already claimed")
+  );
 }
 
 export function isUmbraAccountFullyRegistered(
@@ -219,10 +284,7 @@ export function useUmbra() {
 
     const zkProver = getUserRegistrationProver({
       // using as proxy because of cors issues
-      assetProvider: getCdnZkAssetProvider({
-        baseUrl: "/api/umbra-zk",
-        manifestUrl: "/api/umbra-zk/manifest.json",
-      }),
+      assetProvider: getUmbraZkAssetProvider(),
     });
 
     const register = getUserRegistrationFunction(
@@ -291,10 +353,7 @@ export function useUmbra() {
         { client },
         {
           zkProver: getCreateReceiverClaimableUtxoFromPublicBalanceProver({
-            assetProvider: getCdnZkAssetProvider({
-              baseUrl: "/api/umbra-zk",
-              manifestUrl: "/api/umbra-zk/manifest.json",
-            }),
+            assetProvider: getUmbraZkAssetProvider(),
           }),
         },
       );
@@ -358,11 +417,316 @@ export function useUmbra() {
     const client = await getClient(signer);
     const scan = getClaimableUtxoScannerFunction({ client });
 
-    return scan(
+    console.info("[Umbra] Full claimable UTXO scan started", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      treeIndex: treeIndex.toString(),
+      startInsertionIndex: startInsertionIndex.toString(),
+      endInsertionIndex: endInsertionIndex?.toString(),
+    });
+
+    const result = await scan(
       treeIndex as U32,
       startInsertionIndex as U32,
       endInsertionIndex as U32 | undefined,
     );
+
+    console.info("[Umbra] Full claimable UTXO scan completed", {
+      received: result.received.length,
+      publicReceived: result.publicReceived.length,
+      selfBurnable: result.selfBurnable.length,
+      publicSelfBurnable: result.publicSelfBurnable.length,
+      nextScanStartIndex: result.nextScanStartIndex.toString(),
+    });
+
+    return result;
+  }
+
+  async function claimReceiverClaimableUtxos({
+    signer: providedSigner,
+    utxos,
+  }: {
+    signer?: IUmbraSigner;
+    utxos: readonly UmbraClaimableUtxo[];
+  }) {
+    if (utxos.length === 0) {
+      return null;
+    }
+
+    const signer = providedSigner ?? getConnectedSigner();
+    console.info("[Umbra] Claiming receiver-claimable UTXOs", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      count: utxos.length,
+      utxos: utxos.map(formatUmbraUtxoForLog),
+    });
+
+    const client = await getClient(signer);
+    if (!client.fetchBatchMerkleProof) {
+      throw new Error("Umbra client is missing batch Merkle proof support");
+    }
+
+    const relayer = getUmbraRelayer({
+      apiEndpoint: UMBRA_CLIENT_CONFIG.relayerApiEndpoint,
+    });
+    const claim = getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction(
+      { client },
+      {
+        fetchBatchMerkleProof: client.fetchBatchMerkleProof,
+        zkProver: getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver({
+          assetProvider: getUmbraZkAssetProvider(),
+        }),
+        relayer,
+      },
+    );
+
+    try {
+      const result = await claim(utxos);
+      console.info("[Umbra] Receiver-claimable UTXO claim completed", {
+        count: utxos.length,
+        result,
+      });
+      return result;
+    } catch (error) {
+      console.error("[Umbra] Receiver-claimable UTXO claim failed", {
+        count: utxos.length,
+        utxos: utxos.map(formatUmbraUtxoForLog),
+        alreadySpent: isUmbraUtxoAlreadySpentError(error),
+        error,
+      });
+      throw error;
+    }
+  }
+
+  async function reclaimStaleWithdrawalProofAccounts({
+    signer: providedSigner,
+  }: {
+    signer?: IUmbraSigner;
+  } = {}) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    return reclaimStaleUmbraWithdrawalProofAccounts({ signer, client });
+  }
+
+  /**
+   * Private withdrawal setup: encrypted balance -> self-claimable UTXO.
+   *
+   * Current mainnet status / investigation notes:
+   * - Vault SOL funding and USDC amount are not the current blocker. We reproduced failures with
+   *   ~0.015 SOL available and >= 1 USDC private balance.
+   * - The SDK successfully reaches the create flow, then fails during transaction send/preflight
+   *   at Umbra's `DepositIntoStealthPoolFromSharedBalanceV11` queue instruction.
+   * - Observed error: `CreateUtxoError` stage `transaction-send`, `Custom program error: #1`
+   *   on instruction #2.
+   * - This appears to be an Umbra/Arcium mainnet queue/precondition issue, not a Hush fee-math
+   *   or dust-amount issue.
+   * - Failed attempts can create stale proof/input-buffer accounts. We persist the generation
+   *   index locally, derive the proof account dynamically, and reclaim rent in the catch block.
+   *
+   * Next steps:
+   * - Do not keep blindly retrying this private UTXO path in production.
+   * - Keep automatic stale-rent reclaim on failure.
+   * - Add/ship a direct encrypted-balance -> public-wallet withdrawal fallback with clear privacy
+   *   warning: it is cheaper/faster but may link the vault withdrawal to the destination wallet.
+   * - Re-enable this private UTXO path only after Umbra/Arcium confirms/fixes the mainnet
+   *   `DepositIntoStealthPoolFromSharedBalanceV11` custom error #1 failure.
+   */
+  async function createSelfClaimableUtxoFromEncryptedBalance({
+    signer: providedSigner,
+    amountBaseUnits,
+    destinationAddress,
+  }: {
+    signer?: IUmbraSigner;
+    amountBaseUnits: bigint;
+    destinationAddress: string;
+  }) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    await reclaimStaleWithdrawalProofAccounts({ signer });
+    const createUtxo = getEncryptedBalanceToSelfClaimableUtxoCreatorFunction(
+      { client },
+      {
+        zkProver: getCreateSelfClaimableUtxoFromEncryptedBalanceProver({
+          assetProvider: getUmbraZkAssetProvider(),
+        }),
+      },
+    );
+
+    const generationStorageKey = getWithdrawalGenerationStorageKey({
+      signerAddress: signer.address,
+      destinationAddress,
+      amountBaseUnits,
+    });
+    const hadPendingGeneration =
+      hasPendingWithdrawalGeneration(generationStorageKey);
+    const generationIndex = getOrCreateWithdrawalGenerationIndex({
+      storageKey: generationStorageKey,
+      signerAddress: signer.address,
+      destinationAddress,
+      amountBaseUnits,
+    });
+    const vaultSolBalance = await getSolBalanceLamports(signer.address);
+    console.info("[Umbra] Creating self-claimable UTXO from encrypted balance", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      destinationAddress,
+      amountBaseUnits: amountBaseUnits.toString(),
+      vaultSolBalanceLamports: vaultSolBalance.toString(),
+      generationIndex: generationIndex.toString(),
+      retryingPendingGeneration: hadPendingGeneration,
+    });
+
+    if (vaultSolBalance < MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS) {
+      throw new Error(
+        "Vault SOL is too low to recover or retry the private withdrawal setup.",
+      );
+    }
+
+    try {
+      const result = await createUtxo(
+        {
+          amount: amountBaseUnits as U64,
+          destinationAddress: toAddress(destinationAddress),
+          mint: solanaPaymentConfig.usdcMint,
+        },
+        { generationIndex },
+      );
+
+      clearWithdrawalGenerationIndex(generationStorageKey);
+      console.info("[Umbra] Self-claimable UTXO creation completed", result);
+      return result;
+    } catch (error) {
+      const serializedError = serializeErrorForLog(error);
+      console.error("[Umbra] Self-claimable UTXO creation failed", {
+        network: UMBRA_CLIENT_CONFIG.network,
+        signer: signer.address,
+        destinationAddress,
+        amountBaseUnits: amountBaseUnits.toString(),
+        vaultSolBalanceLamports: vaultSolBalance.toString(),
+        generationIndex: generationIndex.toString(),
+        retryingPendingGeneration: hadPendingGeneration,
+        serializedError,
+        error,
+      });
+      console.error(
+        "[Umbra] Self-claimable UTXO creation failed JSON",
+        JSON.stringify(serializedError, null, 2),
+      );
+
+      try {
+        const reclaimedAfterFailure = await reclaimStaleWithdrawalProofAccounts({
+          signer,
+        });
+        if (reclaimedAfterFailure.length > 0) {
+          console.info(
+            "[Umbra] Reclaimed stale proof account after failed UTXO creation",
+            reclaimedAfterFailure,
+          );
+        }
+      } catch (reclaimError) {
+        console.warn(
+          "[Umbra] Could not reclaim stale proof account after failed UTXO creation",
+          reclaimError,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  async function claimSelfClaimableUtxosToPublicBalance({
+    signer: providedSigner,
+    utxos,
+  }: {
+    signer?: IUmbraSigner;
+    utxos: readonly UmbraSelfClaimableUtxo[];
+  }) {
+    if (utxos.length === 0) {
+      return null;
+    }
+
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    if (!client.fetchBatchMerkleProof) {
+      throw new Error("Umbra client is missing batch Merkle proof support");
+    }
+
+    const relayer = getUmbraRelayer({
+      apiEndpoint: UMBRA_CLIENT_CONFIG.relayerApiEndpoint,
+    });
+    const claim = getSelfClaimableUtxoToPublicBalanceClaimerFunction(
+      { client },
+      {
+        fetchBatchMerkleProof: client.fetchBatchMerkleProof,
+        zkProver: getClaimSelfClaimableUtxoIntoPublicBalanceProver({
+          assetProvider: getUmbraZkAssetProvider(),
+        }),
+        relayer,
+      },
+    );
+
+    console.info("[Umbra] Claiming self-claimable UTXOs to public balance", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      count: utxos.length,
+      utxos: utxos.map(formatUmbraUtxoForLog),
+    });
+
+    const result = await claim(utxos);
+    console.info("[Umbra] Self-claimable public claim completed", {
+      count: utxos.length,
+      result,
+    });
+    return result;
+  }
+
+  async function withdrawPrivateUsdcToWallet({
+    signer: providedSigner,
+    destinationAddress,
+    amountBaseUnits,
+  }: {
+    signer?: IUmbraSigner;
+    destinationAddress: string;
+    amountBaseUnits: bigint;
+  }) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const before = await scanRecentClaimableUtxos({ signer });
+    const beforeIds = new Set(before.selfBurnable.map(getUmbraUtxoId));
+
+    const createResult = await createSelfClaimableUtxoFromEncryptedBalance({
+      signer,
+      amountBaseUnits,
+      destinationAddress,
+    });
+
+    for (let attempt = 1; attempt <= WITHDRAWAL_SELF_CLAIMABLE_SCAN_ATTEMPTS; attempt++) {
+      const scan = await scanRecentClaimableUtxos({ signer });
+      const newUtxos = scan.selfBurnable.filter(
+        (utxo) =>
+          !beforeIds.has(getUmbraUtxoId(utxo)) &&
+          utxo.destinationAddress === destinationAddress,
+      );
+
+      console.info("[Umbra] Withdrawal self-claimable UTXO scan", {
+        attempt,
+        found: newUtxos.length,
+        utxos: newUtxos.map(formatUmbraUtxoForLog),
+      });
+
+      if (newUtxos.length > 0) {
+        const claimResult = await claimSelfClaimableUtxosToPublicBalance({
+          signer,
+          utxos: newUtxos,
+        });
+        return { createResult, claimResult, claimedUtxos: newUtxos };
+      }
+
+      if (attempt < WITHDRAWAL_SELF_CLAIMABLE_SCAN_ATTEMPTS) {
+        await sleep(WITHDRAWAL_SELF_CLAIMABLE_SCAN_DELAY_MS);
+      }
+    }
+
+    throw new Error("Created withdrawal UTXO, but it was not visible in the indexer yet. Try again shortly.");
   }
 
   async function scanRecentClaimableUtxos({
@@ -394,6 +758,15 @@ export function useUmbra() {
     );
     const totalCount = BigInt(probe.totalCount ?? 0);
 
+    console.info("[Umbra] Recent claimable UTXO scan probe", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      treeIndex: treeIndex.toString(),
+      totalCount: totalCount.toString(),
+      maxLeaves: maxLeaves.toString(),
+      pageSize: pageSize.toString(),
+    });
+
     if (totalCount === 0n) {
       return {
         selfBurnable: [],
@@ -414,11 +787,27 @@ export function useUmbra() {
       },
     );
 
-    return scan(
+    console.info("[Umbra] Recent claimable UTXO scan started", {
+      treeIndex: treeIndex.toString(),
+      startInsertionIndex: startInsertionIndex.toString(),
+      endInsertionIndex: endInsertionIndex.toString(),
+    });
+
+    const result = await scan(
       treeIndex as U32,
       startInsertionIndex as U32,
       endInsertionIndex as U32,
     );
+
+    console.info("[Umbra] Recent claimable UTXO scan completed", {
+      received: result.received.length,
+      publicReceived: result.publicReceived.length,
+      selfBurnable: result.selfBurnable.length,
+      publicSelfBurnable: result.publicSelfBurnable.length,
+      nextScanStartIndex: result.nextScanStartIndex.toString(),
+    });
+
+    return result;
   }
 
   return {
@@ -434,5 +823,10 @@ export function useUmbra() {
     depositAmount: createReceiverClaimableUtxo,
     scanClaimableUtxos,
     scanRecentClaimableUtxos,
+    claimReceiverClaimableUtxos,
+    createSelfClaimableUtxoFromEncryptedBalance,
+    claimSelfClaimableUtxosToPublicBalance,
+    withdrawPrivateUsdcToWallet,
+    reclaimStaleWithdrawalProofAccounts,
   };
 }

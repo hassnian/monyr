@@ -21,19 +21,16 @@ import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { VAULT_SWEEP_BUFFER_LAMPORTS } from "./constants";
 
 const TRANSFER_FEE_BUFFER_LAMPORTS = 10_000n;
+const WITHDRAWAL_SWEEP_NUMERATOR = 95n;
+const WITHDRAWAL_SWEEP_DENOMINATOR = 100n;
 
-export async function sweepExcessVaultSol({
-  vaultPubkey,
+async function sweepVaultSol({
   keyPairSigner,
+  sweepLamports,
 }: {
-  vaultPubkey: string;
   keyPairSigner: KeyPairSigner;
+  sweepLamports: bigint;
 }) {
-  const balance = await getVaultBalance(vaultPubkey);
-  const currentLamports = BigInt(balance.lamports);
-  const sweepLamports =
-    currentLamports - VAULT_SWEEP_BUFFER_LAMPORTS - TRANSFER_FEE_BUFFER_LAMPORTS;
-
   if (sweepLamports <= 0n) {
     return { signature: null, lamports: "0" };
   }
@@ -72,4 +69,39 @@ export async function sweepExcessVaultSol({
   await sendAndConfirmTransaction(signedTx, { commitment: "confirmed" });
 
   return { lamports: sweepLamports.toString() };
+}
+
+export async function sweepExcessVaultSol({
+  vaultPubkey,
+  keyPairSigner,
+}: {
+  vaultPubkey: string;
+  keyPairSigner: KeyPairSigner;
+}) {
+  const balance = await getVaultBalance(vaultPubkey);
+  const currentLamports = BigInt(balance.lamports);
+  const sweepLamports =
+    currentLamports - VAULT_SWEEP_BUFFER_LAMPORTS - TRANSFER_FEE_BUFFER_LAMPORTS;
+
+  return sweepVaultSol({ keyPairSigner, sweepLamports });
+}
+
+export async function sweepWithdrawalSetupSol({
+  vaultPubkey,
+  keyPairSigner,
+}: {
+  vaultPubkey: string;
+  keyPairSigner: KeyPairSigner;
+}) {
+  const balance = await getVaultBalance(vaultPubkey);
+  const currentLamports = BigInt(balance.lamports);
+  const sweepableLamports =
+    currentLamports - VAULT_SWEEP_BUFFER_LAMPORTS - TRANSFER_FEE_BUFFER_LAMPORTS;
+  const sweepLamports =
+    sweepableLamports > 0n
+      ? (sweepableLamports * WITHDRAWAL_SWEEP_NUMERATOR) /
+        WITHDRAWAL_SWEEP_DENOMINATOR
+      : 0n;
+
+  return sweepVaultSol({ keyPairSigner, sweepLamports });
 }
