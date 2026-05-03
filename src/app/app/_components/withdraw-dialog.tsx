@@ -498,25 +498,10 @@ function Summary({
         )}
       </Row>
 
-      <Row label="Create UTXO fee" hint="est.">
+      <Row label="Protocol fee" hint="est.">
         {showAmount ? (
           <span className="font-mono tabular text-[12.5px] text-foreground/85">
-            {formatBaseUnitsForUi(estimate.createFeeBaseUnits)}{" "}
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-              USDC
-            </span>
-          </span>
-        ) : (
-          <span className="font-mono tabular text-[12.5px] text-muted-foreground/40">
-            —
-          </span>
-        )}
-      </Row>
-
-      <Row label="Claim fee" hint="est.">
-        {showAmount ? (
-          <span className="font-mono tabular text-[12.5px] text-foreground/85">
-            {formatBaseUnitsForUi(estimate.claimFeeBaseUnits)}{" "}
+            {formatBaseUnitsForUi(estimate.totalFeeBaseUnits)}{" "}
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
               USDC
             </span>
