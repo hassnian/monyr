@@ -13,6 +13,7 @@ import {
   Lock,
 } from "lucide-react";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ActivitySpark } from "./activity-spark";
 import { DashboardSyncIndicator } from "./dashboard-sync-indicator";
@@ -21,7 +22,11 @@ import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
-import { dailyFlow, metrics } from "../_data";
+import {
+  useInboxPayments,
+  useInboxSummary,
+  useStoredClaimedPaymentIds,
+} from "@/app/hooks/useInboxPayments";
 
 /**
  * The "prospectus strip" — four editorial metric tiles, plus an oversized hero
@@ -36,6 +41,16 @@ export function MetricsBand({ user }: { user: AuthUser }) {
   const { unlockedVault } = useAuth();
   const { account } = useWallet();
   const { getPrivateUsdcBalance } = useUmbra();
+  const {
+    data: inboxPayments = [],
+    isFetching: isLoadingInbox,
+    isLoading: isInitialLoadingInbox,
+  } = useInboxPayments();
+  const settledPaymentIds = useStoredClaimedPaymentIds(
+    inboxPayments,
+    unlockedVault?.vaultPubkey,
+  );
+  const inboxSummary = useInboxSummary(inboxPayments, settledPaymentIds);
 
   const isActive = user.umbraStatus === "active";
   const isUnlocked =
@@ -126,10 +141,10 @@ export function MetricsBand({ user }: { user: AuthUser }) {
           className="md:col-span-3"
           label="Total received (private)"
           eyebrow={
-            isLoadingBalance ? (
+            isLoadingBalance || isLoadingInbox ? (
               <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
                 <Loader2 className="size-3 animate-spin text-primary" />
-                Decrypting balance…
+                Syncing inbox…
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
@@ -161,22 +176,30 @@ export function MetricsBand({ user }: { user: AuthUser }) {
 
           <div className="min-w-0">
             <AmountDisplay
-              amount={privateBalance ?? null}
+              amount={null}
+              amountBaseUnits={inboxSummary.totalReceivedBaseUnits}
               hidden={!showAmounts}
+              loading={isInitialLoadingInbox}
               size="xl"
               className="leading-none"
             />
-            <p className="mt-2 text-[12px] text-muted-foreground/80">
-              <span className="font-mono tabular">{metrics.totalReceivedCount}</span> payments ·
-              across <span className="font-mono tabular">6</span> labels & invoices
-            </p>
+            <div className="mt-2 text-[12px] text-muted-foreground/80">
+              {isInitialLoadingInbox ? (
+                <Skeleton className="inline-block h-3 w-44 align-middle bg-muted/50" />
+              ) : (
+                <>
+                  <span className="font-mono tabular">{inboxSummary.totalReceivedCount}</span> payments ·
+                  across <span className="font-mono tabular">{inboxSummary.labelsAndInvoicesCount}</span> labels & invoices
+                </>
+              )}
+            </div>
           </div>
           <div className="mt-3 -mx-1 text-foreground/60">
-            <ActivitySpark data={dailyFlow} height={44} />
+            <ActivitySpark data={inboxSummary.dailyFlow} height={44} />
           </div>
           <div className="mt-1.5 flex justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">
-            <span>Mar 25</span>
-            <span>Apr 24</span>
+            <span>{inboxSummary.rangeStartLabel}</span>
+            <span>{inboxSummary.rangeEndLabel}</span>
           </div>
         </Tile>
 
@@ -186,14 +209,26 @@ export function MetricsBand({ user }: { user: AuthUser }) {
           label="This month"
           eyebrow={
             <span className="whitespace-nowrap text-[11px] text-muted-foreground/80">
-              April · to date
+              {inboxSummary.monthLabel} · to date
             </span>
           }
         >
-          <AmountDisplay amount={metrics.monthToDate} hidden={!showAmounts} size="lg" />
-          <p className="mt-2 text-[12px] text-muted-foreground/80">
-            <span className="font-mono tabular">{metrics.monthToDateCount}</span> payments
-          </p>
+          <AmountDisplay
+            amount={null}
+            amountBaseUnits={inboxSummary.monthToDateBaseUnits}
+            hidden={!showAmounts}
+            loading={isInitialLoadingInbox}
+            size="lg"
+          />
+          <div className="mt-2 text-[12px] text-muted-foreground/80">
+            {isInitialLoadingInbox ? (
+              <Skeleton className="inline-block h-3 w-20 align-middle bg-muted/50" />
+            ) : (
+              <>
+                <span className="font-mono tabular">{inboxSummary.monthToDateCount}</span> payments
+              </>
+            )}
+          </div>
         </Tile>
 
         {/* Pending claims */}
@@ -207,10 +242,22 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             </span>
           }
         >
-          <AmountDisplay amount={metrics.pendingAmount} hidden={!showAmounts} size="lg" />
-          <p className="mt-2 text-[12px] text-muted-foreground/80">
-            <span className="font-mono tabular">{metrics.pendingClaims}</span> UTXO in flight
-          </p>
+          <AmountDisplay
+            amount={null}
+            amountBaseUnits={inboxSummary.pendingAmountBaseUnits}
+            hidden={!showAmounts}
+            loading={isInitialLoadingInbox}
+            size="lg"
+          />
+          <div className="mt-2 text-[12px] text-muted-foreground/80">
+            {isInitialLoadingInbox ? (
+              <Skeleton className="inline-block h-3 w-20 align-middle bg-muted/50" />
+            ) : (
+              <>
+                <span className="font-mono tabular">{inboxSummary.pendingClaims}</span> incoming
+              </>
+            )}
+          </div>
         </Tile>
 
         {/* Active send-links */}
@@ -223,9 +270,13 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             </span>
           }
         >
-          <p className="font-serif text-4xl leading-none tracking-tight text-foreground">
-            {metrics.activeLinks}
-          </p>
+          {isInitialLoadingInbox ? (
+            <Skeleton className="h-9 w-12 rounded-md bg-muted/60" />
+          ) : (
+            <p className="font-serif text-4xl leading-none tracking-tight text-foreground">
+              {inboxSummary.activeLinks}
+            </p>
+          )}
           <p className="mt-2 text-[12px] text-muted-foreground/80">
             unclaimed · awaiting recipient
           </p>
@@ -277,4 +328,3 @@ function Tile({
     </div>
   );
 }
-

@@ -3,7 +3,7 @@
 import { handleUrl } from "@/lib/brand";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -22,17 +22,19 @@ import { AmountDisplay } from "@/components/payments/amount-display";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import type { Payment } from "../_data";
-import { getMyPaymentMetadata } from "@/app/actions/payment-metadata";
 import { useAuth } from "@/app/contexts/auth-context";
+import {
+  readStoredClaimStatus,
+  useInboxPayments,
+  writeStoredClaimStatus,
+} from "@/app/hooks/useInboxPayments";
 import {
   isUmbraUtxoAlreadySpentError,
   useUmbra,
-  type UmbraClaimableUtxo,
 } from "@/app/hooks/useUmbra";
 import { useUnlockDashboard } from "@/app/hooks/useUnlockDashboard";
-import { solanaPaymentConfig } from "@/lib/payments/solana-config";
-import { decryptReceiptPayload, type EncryptedReceiptPayload } from "@/lib/receipts/crypto";
 
 import {
   dateBucket,
@@ -47,61 +49,12 @@ import {
  * renders in italic serif to echo the figcaption voice from the landing page —
  * it's editorial, not log output.
  */
-type PaymentMetadataPayload = {
-  amountBaseUnits?: string;
-  memo?: string | null;
-  subPath?: string | null;
-  invoiceId?: string | null;
-  utxoCreateSignature?: string;
-  createdAt?: string;
-};
-
-function takeMatchingMetadata(
-  metadataByAmount: Map<string, PaymentMetadataPayload[]>,
-  amountBaseUnits: string,
-) {
-  const matches = metadataByAmount.get(amountBaseUnits);
-  return matches?.shift() ?? null;
-}
-
 function paymentTimestamp(payment: Payment) {
   const time = new Date(payment.createdAt).getTime();
   return Number.isFinite(time) ? time : 0;
 }
 
 type ClaimPhase = "idle" | "claiming" | "settled" | "failed";
-
-type StoredClaimStatus = "claiming" | "claimed";
-
-function getStoredClaimKey(vaultPubkey: string, paymentId: string) {
-  return `hush:umbra-claim:${vaultPubkey}:${paymentId}`;
-}
-
-function readStoredClaimStatus(vaultPubkey: string, paymentId: string) {
-  try {
-    return window.localStorage.getItem(
-      getStoredClaimKey(vaultPubkey, paymentId),
-    ) as StoredClaimStatus | null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredClaimStatus(
-  vaultPubkey: string,
-  paymentId: string,
-  status: StoredClaimStatus,
-) {
-  try {
-    window.localStorage.setItem(getStoredClaimKey(vaultPubkey, paymentId), status);
-  } catch {
-    // Non-critical UI dedupe only.
-  }
-}
-
-type InboxPayment = Payment & {
-  utxo: UmbraClaimableUtxo;
-};
 
 export function Inbox({ onCountChange }: { onCountChange?: (count: number) => void }) {
   const [filter, setFilter] = useState<string>("all");
@@ -114,7 +67,7 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const { user, unlockedVault } = useAuth();
-  const { scanRecentClaimableUtxos, claimReceiverClaimableUtxos } = useUmbra();
+  const { claimReceiverClaimableUtxos } = useUmbra();
   const queryClient = useQueryClient();
   const { isUnlocked, isActive } = useUnlockDashboard();
   const isInactive = !isActive;
@@ -122,56 +75,7 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
   const {
     data: payments = [],
     isFetching: loading,
-  } = useQuery<InboxPayment[]>({
-    enabled: isUnlocked && Boolean(unlockedVault),
-    queryKey: ["inbox", "claimable", user?.handle, unlockedVault?.vaultPubkey],
-    queryFn: async () => {
-      if (!unlockedVault) return [];
-      const [result, metadataRows] = await Promise.all([
-        scanRecentClaimableUtxos({
-          signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
-        }),
-        getMyPaymentMetadata(),
-      ]);
-      const metadata = await Promise.all(
-        metadataRows.map(async (row) =>
-          decryptReceiptPayload<PaymentMetadataPayload>(
-            unlockedVault.receiptEncryptionPrivateKey,
-            JSON.parse(row.encryptedPayload) as EncryptedReceiptPayload,
-          ).catch(() => null),
-        ),
-      );
-      const metadataByAmount = metadata.reduce((map, payload) => {
-        if (!payload?.amountBaseUnits) return map;
-        const matches = map.get(payload.amountBaseUnits) ?? [];
-        matches.push(payload);
-        map.set(payload.amountBaseUnits, matches);
-        return map;
-      }, new Map<string, PaymentMetadataPayload[]>());
-      const claimable = [...result.received, ...result.publicReceived];
-      return claimable.map((utxo) => {
-        const amountBaseUnits = utxo.amount.toString();
-        const metadata = takeMatchingMetadata(metadataByAmount, amountBaseUnits);
-
-        return {
-          id: `${utxo.treeIndex}:${utxo.insertionIndex}`,
-          amount: Number(utxo.amount) / 10 ** solanaPaymentConfig.tokenDecimals,
-          amountBaseUnits,
-          memo: metadata?.memo?.trim() || null,
-          payerLabel: null,
-          payerPubkey: null,
-          subPath: metadata?.subPath ?? null,
-          subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
-          createdAt: metadata?.createdAt ?? new Date().toISOString(),
-          status: "pending",
-          txSig: metadata?.utxoCreateSignature?.slice(0, 8) ?? `${utxo.treeIndex}:${utxo.insertionIndex}`,
-          utxo,
-        } satisfies InboxPayment;
-      });
-    },
-    staleTime: 60_000,
-    retry: false,
-  });
+  } = useInboxPayments();
 
   // Inbox is a ledger, not a queue: claimed payments stay in place as history.
   // The optimistic overlay tags ids with their post-claim state so the pill

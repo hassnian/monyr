@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -30,9 +30,17 @@ export function useDashboardSync() {
     lastUpdatedAt: null,
     error: null,
   });
+  const snapshotRef = useRef(snapshot);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useEffect(() => {
     const cache = queryClient.getQueryCache();
+    let queued = false;
+    let cancelled = false;
+
     function read() {
       const queries = cache.getAll().filter((q) => {
         const head = q.queryKey[0];
@@ -49,14 +57,37 @@ export function useDashboardSync() {
           err = "Couldn't reach the network. Try refreshing.";
         }
       }
-      setSnapshot({
+
+      const next = {
         lastUpdatedAt: latest ? new Date(latest) : null,
         error: err,
+      } satisfies Snapshot;
+      const current = snapshotRef.current;
+      if (
+        current.error === next.error &&
+        current.lastUpdatedAt?.getTime() === next.lastUpdatedAt?.getTime()
+      ) {
+        return;
+      }
+      snapshotRef.current = next;
+      setSnapshot(next);
+    }
+
+    function scheduleRead() {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (!cancelled) read();
       });
     }
-    read();
-    const unsub = cache.subscribe(read);
-    return unsub;
+
+    scheduleRead();
+    const unsub = cache.subscribe(scheduleRead);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [queryClient]);
 
   function refresh() {
