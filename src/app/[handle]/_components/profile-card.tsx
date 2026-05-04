@@ -11,6 +11,7 @@ import { AmountInput } from "@/components/payments/amount-input";
 import { PayConfirmationModal } from "./pay-confirmation-modal";
 import { formatDecimalAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { formatShortDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
@@ -101,27 +102,34 @@ export function ProfileCard({
       />
 
       <div className="relative rounded-2xl border border-border bg-card p-8 md:p-10">
-        {/* Top badge for sub-paths — invoice # or label */}
+        {/* Top badge — chip on the left, document reference (invoice id) on the right.
+            Mirrors the terminal-state card so the silhouette stays steady across
+            active → paid → expired. */}
         {(variant.kind === "invoice" || variant.kind === "label") && (
-          <div className="mb-6 flex items-center gap-2">
+          <div className="mb-6 flex items-center justify-between gap-3">
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
-                "text-[11px] font-medium uppercase tracking-wider",
+                "font-mono tabular text-[10.5px] uppercase tracking-[0.22em]",
                 variant.kind === "invoice"
-                  ? "border-primary/25 bg-primary/10 text-primary"
+                  ? "border-primary/30 bg-primary/10 text-primary"
                   : "border-border bg-secondary text-muted-foreground",
               )}
             >
               {variant.kind === "invoice" ? (
                 <>
-                  <Lock className="size-3" />
-                  Invoice · #{variant.invoiceId}
+                  <Lock className="size-3" strokeWidth={2.25} />
+                  Invoice
                 </>
               ) : (
                 <>for {variant.label}</>
               )}
             </span>
+            {variant.kind === "invoice" && (
+              <span className="font-mono tabular text-[10px] uppercase tracking-[0.22em] text-muted-foreground/60">
+                #{variant.invoiceId}
+              </span>
+            )}
           </div>
         )}
 
@@ -326,14 +334,16 @@ function InvoiceBlock({
   memo: string;
   dueAt?: string;
 }) {
+  const dueLabel = formatShortDate(dueAt);
+
   return (
     <div className="space-y-5">
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           Amount due
         </span>
-        {dueAt && (
-          <span className="text-[11px] text-muted-foreground">Due {dueAt}</span>
+        {dueLabel && (
+          <span className="text-[11px] text-muted-foreground">Due {dueLabel}</span>
         )}
       </div>
       <div className="rounded-xl border border-border-strong bg-surface-raised/40 p-5">

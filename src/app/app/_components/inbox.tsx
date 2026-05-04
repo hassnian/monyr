@@ -20,12 +20,15 @@ import { GradientAvatar } from "@/components/payments/gradient-avatar";
 
 import { AmountDisplay } from "@/components/payments/amount-display";
 
+import { ConfettiBurst } from "@/components/ui/confetti-burst";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import type { Payment } from "../_data";
 import { useAuth } from "@/app/contexts/auth-context";
 import {
+  hasCelebratedFirstClaim,
+  markFirstClaimCelebrated,
   readStoredClaimStatus,
   useInboxPayments,
   writeStoredClaimStatus,
@@ -63,7 +66,9 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
   const [claimingIds, setClaimingIds] = useState<Set<string>>(() => new Set());
   const [claimedIds, setClaimedIds] = useState<Set<string>>(() => new Set());
   const [claimStorageRevision, setClaimStorageRevision] = useState(0);
+  const [confettiKey, setConfettiKey] = useState<number | null>(null);
   const settledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const { user, unlockedVault } = useAuth();
@@ -87,6 +92,7 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
   useEffect(() => {
     return () => {
       if (settledTimerRef.current) clearTimeout(settledTimerRef.current);
+      if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
       staggerTimersRef.current.forEach(clearTimeout);
       staggerTimersRef.current = [];
     };
@@ -198,6 +204,16 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
         invalidatedPrivateBalance: unlockedVault.vaultPubkey,
       });
       setClaimPhase("settled");
+
+      if (!hasCelebratedFirstClaim(unlockedVault.vaultPubkey)) {
+        markFirstClaimCelebrated(unlockedVault.vaultPubkey);
+        setConfettiKey(Date.now());
+        if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+        confettiTimerRef.current = setTimeout(() => {
+          setConfettiKey(null);
+          confettiTimerRef.current = null;
+        }, 5200);
+      }
 
       // Cascade row flips so success feels alive, not a single state snap.
       const staggerStep = 70;
@@ -354,6 +370,8 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
 
   return (
     <div className="flex flex-col gap-5">
+      {confettiKey !== null && <ConfettiBurst key={confettiKey} />}
+
       {showClaimBanner && (
         <ClaimBanner
           phase={claimPhase}

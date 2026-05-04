@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
+import { markInvoicePaymentContextPaid } from "@/app/actions/payment-contexts";
 import { formatDecimalAmount, nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { encryptReceiptPayload } from "@/lib/receipts/crypto";
@@ -69,8 +71,28 @@ export function PayConfirmationModal({
   const quickPaymentInFlightRef = useRef(false);
   const privateCheckInFlightRef = useRef(false);
   const privateDepositInFlightRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
   const { connectedWallet } = useWallet();
   const { getUserAccount, isAccountFullyRegistered, createReceiverClaimableUtxo } = useUmbra();
+  const router = useRouter();
+
+  async function markInvoicePaid(paymentSignature: string) {
+    if (!subPath?.startsWith("invoice/")) return;
+
+    const ok = await markInvoicePaymentContextPaid({
+      handle,
+      path: subPath,
+      paymentSignature,
+    }).catch((error) => {
+      console.error("Failed to mark invoice paid", error);
+      return false;
+    });
+
+    // Defer the refresh until the modal is dismissed — refreshing while the
+    // success screen is open would unmount the modal mid-celebration as the
+    // page transitions to the paid terminal state.
+    if (ok) pendingRefreshRef.current = true;
+  }
 
   async function buildEncryptedReceiptPayload(receipt: {
     rail: PaymentRail;
@@ -92,6 +114,10 @@ export function PayConfirmationModal({
 
   useEffect(() => {
     if (!open) {
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        router.refresh();
+      }
       // reset after the close animation so the next open starts at the choice screen
       const t = setTimeout(() => {
         setCompletedRail("quick");
@@ -100,7 +126,7 @@ export function PayConfirmationModal({
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, router]);
 
 
 
@@ -120,6 +146,7 @@ export function PayConfirmationModal({
       });
       const receiptSignature = String(result.signature);
       setReceiptSignature(receiptSignature);
+      await markInvoicePaid(receiptSignature);
       setStep("success");
     } catch (error) {
       console.error("Quick Pay failed", error);
@@ -151,6 +178,7 @@ export function PayConfirmationModal({
       }).catch((error) => {
         console.error("Failed to save payment metadata", error);
       });
+      await markInvoicePaid(utxoCreateSignature);
       setStep("success");
     } catch (error) {
       console.error("Private Pay failed", error);

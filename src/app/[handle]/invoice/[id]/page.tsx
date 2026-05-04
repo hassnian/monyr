@@ -5,6 +5,7 @@ import { getHandle } from "@/app/actions/handles";
 import { getPublicPaymentContext } from "@/app/actions/payment-contexts";
 import { PageFrame } from "@/components/payments/page-frame";
 import { ProfileCard } from "../../_components/profile-card";
+import { InvoiceTerminalCard } from "../../_components/invoice-terminal-card";
 
 type Params = { handle: string; id: string };
 
@@ -35,19 +36,50 @@ export default async function HandleInvoicePage({
   if (!handle.startsWith("@")) notFound();
   const bare = handle.slice(1);
   if (!/^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$/.test(bare)) notFound();
-  if (!/^[a-z0-9]{4,16}$/i.test(id)) notFound();
+  if (!/^[a-z0-9](?:[a-z0-9-]{2,14}[a-z0-9])$/i.test(id)) notFound();
 
   const [profile, context] = await Promise.all([
     getHandle(bare),
-    getPublicPaymentContext({ handle: bare, path: `invoice/${id}` }),
+    getPublicPaymentContext({
+      handle: bare,
+      path: `invoice/${id}`,
+      includeStatuses: ["active", "paid", "expired"],
+    }),
   ]);
 
   if (!profile || !context || context.kind !== "invoice") notFound();
 
   const amount = getConfigNumber(context.config, "amount");
   if (amount === null || amount <= 0) notFound();
-  if (context.status === "expired" || isExpired(getConfigString(context.config, "expiresAt"))) {
-    notFound();
+
+  const expiresAtRaw = getConfigString(context.config, "expiresAt");
+  const memo = getConfigString(context.config, "memo");
+  const isPaid = context.status === "paid";
+  const isExpiredState =
+    context.status === "expired" || (!isPaid && isExpired(expiresAtRaw));
+
+  if (isPaid || isExpiredState) {
+    return (
+      <PageFrame glow={isPaid}>
+        <InvoiceTerminalCard
+          state={isPaid ? "paid" : "expired"}
+          handle={profile.handle}
+          displayName={profile.displayName}
+          bio={profile.bio}
+          invoiceId={id}
+          amount={amount}
+          memo={memo}
+          closedAt={
+            isPaid ? context.updatedAt.toISOString() : expiresAtRaw || null
+          }
+        />
+        <p className="relative z-10 mt-8 max-w-sm text-center text-[11px] text-muted-foreground/80">
+          {isPaid
+            ? "This page is your receipt — save it for your records."
+            : `Reach out to @${profile.handle} for a fresh invoice.`}
+        </p>
+      </PageFrame>
+    );
   }
 
   return (
@@ -64,11 +96,11 @@ export default async function HandleInvoicePage({
           kind: "invoice",
           invoiceId: id,
           amount,
-          memoTemplate: getConfigString(context.config, "memo"),
-          dueAt: getConfigString(context.config, "expiresAt") || undefined,
+          memoTemplate: memo,
+          dueAt: expiresAtRaw || undefined,
         }}
       />
-      <p className="relative z-10 mt-8 text-center text-[11px] text-muted-foreground/80 max-w-sm">
+      <p className="relative z-10 mt-8 max-w-sm text-center text-[11px] text-muted-foreground/80">
         This invoice is private. Only {profile.handle} will see the amount.{" "}
         <Link
           href="/claim"

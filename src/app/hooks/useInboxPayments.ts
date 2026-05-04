@@ -56,6 +56,26 @@ export function writeStoredClaimStatus(
   }
 }
 
+function getFirstClaimCelebratedKey(vaultPubkey: string) {
+  return `hush:first-claim-celebrated:${vaultPubkey}`;
+}
+
+export function hasCelebratedFirstClaim(vaultPubkey: string) {
+  try {
+    return window.localStorage.getItem(getFirstClaimCelebratedKey(vaultPubkey)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markFirstClaimCelebrated(vaultPubkey: string) {
+  try {
+    window.localStorage.setItem(getFirstClaimCelebratedKey(vaultPubkey), "1");
+  } catch {
+    // Confetti is decorative — silent failure is fine.
+  }
+}
+
 export function useStoredClaimedPaymentIds(
   payments: readonly Pick<Payment, "id">[],
   vaultPubkey?: string | null,
@@ -79,7 +99,7 @@ export function useStoredClaimedPaymentIds(
     const ids = new Set<string>();
     for (const payment of payments) {
       const status = readStoredClaimStatus(vaultPubkey, payment.id);
-      if (status === "claiming" || status === "claimed") {
+      if (status === "claimed") {
         ids.add(payment.id);
       }
     }

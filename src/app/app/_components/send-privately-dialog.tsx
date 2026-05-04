@@ -24,9 +24,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
+import { getHandle } from "@/app/actions/handles";
+import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
 import { usePrivateBalance } from "@/app/hooks/usePrivateBalance";
+import { useUmbra } from "@/app/hooks/useUmbra";
 import { appUrl } from "@/lib/brand";
 
+import { nativeAmount } from "@/lib/payments/amount";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { encryptReceiptPayload } from "@/lib/receipts/crypto";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -54,6 +60,7 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
   const [memo, setMemo] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [linkId, setLinkId] = useState(() => randomLinkId());
 
   useEffect(() => {
@@ -66,6 +73,7 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
         setMemo("");
         setAcknowledged(false);
         setCopied(false);
+        setError(null);
         setLinkId(randomLinkId());
       }, 150);
       return () => clearTimeout(t);
@@ -77,9 +85,11 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [amount]);
 
+  const { createReceiverClaimableUtxo } = useUmbra();
   const { balance: privateBalance, isLoading: isLoadingBalance } =
     usePrivateBalance();
   const overBalance =
+    mode === "link" &&
     numericAmount !== null &&
     privateBalance !== null &&
     numericAmount > privateBalance;
@@ -96,10 +106,60 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
   const linkUrl = useMemo(() => appUrl(`/c/${linkId}`), [linkId]);
 
   async function handleSubmit() {
-    if (!canSubmit) return;
+    if (!canSubmit || numericAmount === null) return;
+
+    setError(null);
     setPhase("sending");
-    await new Promise((r) => setTimeout(r, 1100));
-    setPhase("done");
+
+    if (mode === "link") {
+      await new Promise((r) => setTimeout(r, 1100));
+      setPhase("done");
+      return;
+    }
+
+    const targetHandle = recipient.trim().replace(/^@/, "").toLowerCase();
+
+    try {
+      const target = await getHandle(targetHandle);
+      if (!target) throw new Error("Handle not found");
+
+      const result = await createReceiverClaimableUtxo({
+        amount: numericAmount,
+        address: target.vaultPubkey,
+      });
+      const utxoCreateSignature = String(result.signature);
+      const encryptedPayload = await encryptReceiptPayload(
+        target.receiptEncryptionPublicKey,
+        {
+          version: 1,
+          rail: "private",
+          amountBaseUnits: nativeAmount(
+            numericAmount,
+            solanaPaymentConfig.tokenDecimals,
+          ).toString(),
+          tokenDecimals: solanaPaymentConfig.tokenDecimals,
+          mint: solanaPaymentConfig.usdcMint,
+          handle: target.handle,
+          memo: memo.trim() || undefined,
+          utxoCreateSignature,
+          createdAt: new Date().toISOString(),
+        },
+      );
+
+      await recordPaymentMetadata({
+        handle: target.handle,
+        utxoCreateSignature,
+        encryptedPayload: JSON.stringify(encryptedPayload),
+      }).catch((error) => {
+        console.error("Failed to save payment metadata", error);
+      });
+
+      setPhase("done");
+    } catch (error) {
+      console.error("Private handle payment failed", error);
+      setError(error instanceof Error ? error.message : "Payment failed");
+      setPhase("form");
+    }
   }
 
   function handleCopyLink() {
@@ -290,6 +350,16 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
                   checked={acknowledged}
                   onChange={setAcknowledged}
                 />
+              )}
+
+              {error && (
+                <p
+                  role="alert"
+                  aria-live="polite"
+                  className="text-center text-[12px] text-destructive"
+                >
+                  {error}
+                </p>
               )}
 
               <Button
@@ -626,9 +696,12 @@ function DonePanel({
         </Button>
       )}
 
-      <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
-        Mock preview · sending isn&apos;t wired up yet.
-      </p>
+      {mode === "link" && (
+        <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
+          Mock preview · sending isn&apos;t wired up yet.
+        </p>
+      )}
+
     </div>
   );
 }

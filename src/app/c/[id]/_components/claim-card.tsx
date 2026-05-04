@@ -9,7 +9,7 @@ import { useWallet } from "@/app/contexts/wallet-context";
 import { formatDecimalAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
-import { ConfettiBurst } from "./confetti-burst";
+import { ConfettiBurst } from "@/components/ui/confetti-burst";
 import type { ClaimableLink } from "../_data";
 
 type Phase = "idle" | "claiming" | "claimed";

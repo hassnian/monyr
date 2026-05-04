@@ -1,7 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { getDb } from "@/db/drizzle";
 import {
@@ -55,6 +55,12 @@ type CreateInvoicePaymentContextInput = {
   expiryDays: 7 | 14 | 30 | 60;
 };
 
+type MarkInvoicePaidInput = {
+  handle: string;
+  path: string;
+  paymentSignature: string;
+};
+
 function normalizeHandle(handle: string) {
   return handle.trim().replace(/^@/, "").toLowerCase();
 }
@@ -64,7 +70,7 @@ function normalizePath(path: string) {
 }
 
 function randomInvoiceSlug() {
-  return randomBytes(4).toString("base64url").toLowerCase().replace(/_/g, "-").slice(0, 6);
+  return randomBytes(4).toString("hex").slice(0, 6);
 }
 
 function invoiceExpiresAt(expiryDays: CreateInvoicePaymentContextInput["expiryDays"]) {
@@ -221,6 +227,35 @@ export async function createInvoicePaymentContext(input: CreateInvoicePaymentCon
   throw new Error("Failed to create invoice");
 }
 
+export async function markInvoicePaymentContextPaid(input: MarkInvoicePaidInput) {
+  await requireWalletSession();
+
+  const handle = normalizeHandle(input.handle);
+  const path = normalizePath(input.path);
+  const paymentSignature = input.paymentSignature.trim();
+
+  if (!handle) throw new Error("Missing handle");
+  if (!paymentSignature) throw new Error("Missing payment signature");
+  if (!path.startsWith("invoice/")) throw new Error("Only invoices can be marked paid");
+
+  const [updated] = await getDb()
+    .update(paymentContexts)
+    .set({ status: "paid", updated_at: new Date() })
+    .from(handles)
+    .where(
+      and(
+        eq(paymentContexts.handle_id, handles.id),
+        eq(handles.handle, handle),
+        eq(paymentContexts.kind, "invoice"),
+        eq(paymentContexts.path, path),
+        eq(paymentContexts.status, "active"),
+      ),
+    )
+    .returning({ id: paymentContexts.id });
+
+  return Boolean(updated);
+}
+
 export async function getMyPaymentContexts(kind?: PaymentContextKind) {
   const session = await requireWalletSession();
 
@@ -254,14 +289,17 @@ export async function getMyPaymentContexts(kind?: PaymentContextKind) {
 export async function getPublicPaymentContext({
   handle,
   path,
+  includeStatuses = ["active"],
 }: {
   handle: string;
   path: string;
+  includeStatuses?: PaymentContextStatus[];
 }) {
   const normalizedHandle = normalizeHandle(handle);
   const normalizedPath = normalizePath(path);
 
   if (!normalizedHandle || !normalizedPath) return null;
+  if (includeStatuses.length === 0) return null;
 
   const [context] = await getDb()
     .select({
@@ -281,7 +319,7 @@ export async function getPublicPaymentContext({
       and(
         eq(handles.handle, normalizedHandle),
         eq(paymentContexts.path, normalizedPath),
-        eq(paymentContexts.status, "active"),
+        inArray(paymentContexts.status, includeStatuses),
       ),
     )
     .limit(1);
