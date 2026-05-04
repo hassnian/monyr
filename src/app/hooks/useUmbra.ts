@@ -144,6 +144,7 @@ function getAlreadyProcessedTolerantForwarder(
         // used for Umbra public UTXO creation, where the SDK forwards one tx at
         // a time, so the signed tx itself gives us the confirmed signature.
         if (
+          !isMainnet &&
           transactions.length === 1 &&
           errorChainIncludes(error, "This transaction has already been processed")
         ) {
