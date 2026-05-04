@@ -13,6 +13,7 @@ import {
 import {
   type IUmbraClient,
   type IUmbraSigner,
+  type TransactionForwarder,
   type UserRegistrationCallbacks,
 } from "@umbra-privacy/sdk/interfaces";
 import {
@@ -27,6 +28,7 @@ import { useRef } from "react";
 import { useWallet } from "@/app/contexts/wallet-context";
 import {
   address as toAddress,
+  getSignatureFromTransaction,
   getTransactionDecoder,
   getTransactionEncoder,
 } from "@solana/kit";
@@ -127,6 +129,42 @@ function errorChainIncludes(error: unknown, text: string) {
   }
 
   return false;
+}
+
+function getAlreadyProcessedTolerantForwarder(
+  forwarder: TransactionForwarder,
+): TransactionForwarder {
+  return {
+    async forwardSequentially(transactions) {
+      try {
+        return await forwarder.forwardSequentially(transactions);
+      } catch (error) {
+        // Devnet can accept/land a signed transaction and then fail the SDK's
+        // resend/confirmation path with "already processed". This wrapper is
+        // used for Umbra public UTXO creation, where the SDK forwards one tx at
+        // a time, so the signed tx itself gives us the confirmed signature.
+        if (
+          transactions.length === 1 &&
+          errorChainIncludes(error, "This transaction has already been processed")
+        ) {
+          const signature = getSignatureFromTransaction(transactions[0]);
+          console.warn(
+            "Umbra transaction was already processed; treating as confirmed",
+            { signature },
+          );
+          return [
+            signature as unknown as Awaited<
+              ReturnType<TransactionForwarder["forwardSequentially"]>
+            >[number],
+          ];
+        }
+
+        throw error;
+      }
+    },
+    forwardInParallel: forwarder.forwardInParallel,
+    fireAndForget: forwarder.fireAndForget,
+  };
 }
 
 export function isUmbraUtxoAlreadySpentError(error: unknown) {
@@ -355,6 +393,11 @@ export function useUmbra() {
           zkProver: getCreateReceiverClaimableUtxoFromPublicBalanceProver({
             assetProvider: getUmbraZkAssetProvider(),
           }),
+          rpc: {
+            transactionForwarder: getAlreadyProcessedTolerantForwarder(
+              client.transactionForwarder,
+            ),
+          },
         },
       );
       const amountInBaseUnits = nativeAmount(
