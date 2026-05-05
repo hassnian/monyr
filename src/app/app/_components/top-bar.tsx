@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Logomark } from "@/components/payments/logomark";
 import { cn } from "@/lib/utils";
 import { WalletConnectButton } from "@/app/components/wallet/WalletConnectButton";
@@ -14,6 +15,11 @@ type Props = {
  * right. Sticky so it holds position over long scrolling.
  */
 export function TopBar({ handle }: Props) {
+  const pathname = usePathname() ?? "";
+  const isDashboard = pathname === "/app";
+  const isReceipts = pathname.startsWith("/app/receipts");
+  const isSettings = pathname.startsWith("/app/settings");
+
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-6 px-6 md:px-10">
@@ -21,12 +27,16 @@ export function TopBar({ handle }: Props) {
           <Logomark size="sm" />
           <span aria-hidden className="h-4 w-px bg-border" />
           <nav className="flex items-center gap-1">
-            <NavLink href="/app" active>
+            <NavLink href="/app" active={isDashboard}>
               Dashboard
             </NavLink>
             <NavLink href={`/@${handle}`}>Profile</NavLink>
-            <NavLink href="/app/receipts">Receipts</NavLink>
-            <NavLink href="/app/settings">Settings</NavLink>
+            <NavLink href="/app/receipts" active={isReceipts}>
+              Receipts
+            </NavLink>
+            <NavLink href="/app/settings" active={isSettings}>
+              Settings
+            </NavLink>
           </nav>
         </div>
 
