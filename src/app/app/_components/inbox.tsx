@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import {
+  markMyClaimableUtxosClaimed,
+  markMyClaimableUtxosClaiming,
+  markMyClaimableUtxosCreated,
+} from "@/app/actions/claimable-utxos";
 
 import {
   Search,
@@ -24,14 +29,15 @@ import { ConfettiBurst } from "@/components/ui/confetti-burst";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { encryptReceiptPayload } from "@/lib/receipts/crypto";
 import type { Payment } from "../_data";
 import { useAuth } from "@/app/contexts/auth-context";
 import {
   hasCelebratedFirstClaim,
   markFirstClaimCelebrated,
-  readStoredClaimStatus,
   useInboxPayments,
-  writeStoredClaimStatus,
+  type InboxPayment,
+  type PendingInboxPayment,
 } from "@/app/hooks/useInboxPayments";
 import {
   isUmbraUtxoAlreadySpentError,
@@ -59,13 +65,22 @@ function paymentTimestamp(payment: Payment) {
 
 type ClaimPhase = "idle" | "claiming" | "settled" | "failed";
 
+function toSafeNumber(value: string | number | bigint) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) throw new Error("UTXO index exceeds safe integer range");
+  return number;
+}
+
+function isPendingInboxPayment(payment: InboxPayment): payment is PendingInboxPayment {
+  return payment.source === "scan";
+}
+
 export function Inbox({ onCountChange }: { onCountChange?: (count: number) => void }) {
   const [filter, setFilter] = useState<string>("all");
   const [query, setQuery] = useState<string>("");
   const [claimPhase, setClaimPhase] = useState<ClaimPhase>("idle");
   const [claimingIds, setClaimingIds] = useState<Set<string>>(() => new Set());
   const [claimedIds, setClaimedIds] = useState<Set<string>>(() => new Set());
-  const [claimStorageRevision, setClaimStorageRevision] = useState(0);
   const [confettiKey, setConfettiKey] = useState<number | null>(null);
   const settledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,29 +113,13 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
     };
   }, []);
 
-  const persistedClaimedIds = useMemo(() => {
-    void claimStorageRevision;
-    if (!unlockedVault) return new Set<string>();
-
-    const ids = new Set<string>();
-    for (const payment of payments) {
-      const status = readStoredClaimStatus(unlockedVault.vaultPubkey, payment.id);
-      if (status === "claiming" || status === "claimed") {
-        ids.add(payment.id);
-      }
-    }
-    return ids;
-  }, [payments, unlockedVault, claimStorageRevision]);
-
-  const effectiveClaimedIds = useMemo(
-    () => new Set([...persistedClaimedIds, ...claimedIds]),
-    [persistedClaimedIds, claimedIds],
-  );
+  const effectiveClaimedIds = claimedIds;
 
   const claimablePayments = useMemo(
     () =>
       payments.filter(
-        (p) =>
+        (p): p is PendingInboxPayment =>
+          isPendingInboxPayment(p) &&
           p.status === "pending" &&
           !claimingIds.has(p.id) &&
           !effectiveClaimedIds.has(p.id),
@@ -131,7 +130,8 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
   const visibleClaimPayments = useMemo(
     () =>
       payments.filter(
-        (p) =>
+        (p): p is PendingInboxPayment =>
+          isPendingInboxPayment(p) &&
           p.status === "pending" &&
           !effectiveClaimedIds.has(p.id) &&
           (claimingIds.has(p.id) || claimablePayments.some((c) => c.id === p.id)),
@@ -171,15 +171,18 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
     });
 
     setClaimPhase("claiming");
-    if (unlockedVault) {
-      for (const id of batchIds) {
-        writeStoredClaimStatus(unlockedVault.vaultPubkey, id, "claiming");
-      }
-    }
     setClaimingIds((prev) => {
       const next = new Set(prev);
       for (const id of batchIds) next.add(id);
       return next;
+    });
+    await markMyClaimableUtxosClaiming({
+      utxos: claimablePayments.map((payment) => ({
+        treeIndex: toSafeNumber(payment.utxo.treeIndex),
+        insertionIndex: toSafeNumber(payment.utxo.insertionIndex),
+      })),
+    }).catch((error) => {
+      console.error("Failed to mark incoming UTXOs claiming", error);
     });
 
     try {
@@ -191,9 +194,28 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
       });
 
       if (unlockedVault) {
-        for (const id of batchIds) {
-          writeStoredClaimStatus(unlockedVault.vaultPubkey, id, "claimed");
-        }
+        const claims = await Promise.all(
+          claimablePayments.map(async (payment) => ({
+            treeIndex: toSafeNumber(payment.utxo.treeIndex),
+            insertionIndex: toSafeNumber(payment.utxo.insertionIndex),
+            encryptedClaimPayload: JSON.stringify(
+              await encryptReceiptPayload(unlockedVault.receiptEncryptionPublicKey, {
+                version: 1,
+                amountBaseUnits: payment.amountBaseUnits ?? payment.utxo.amount.toString(),
+                tokenDecimals: solanaPaymentConfig.tokenDecimals,
+                mint: solanaPaymentConfig.usdcMint,
+                treeIndex: payment.utxo.treeIndex.toString(),
+                insertionIndex: payment.utxo.insertionIndex.toString(),
+                claimedAt: new Date().toISOString(),
+              }),
+            ),
+          })),
+        );
+        await markMyClaimableUtxosClaimed({ claims }).catch((error) => {
+          console.error("Failed to mark incoming UTXOs claimed", error);
+        });
+        await queryClient.invalidateQueries({ queryKey: ["claimable-utxos"] });
+        await queryClient.invalidateQueries({ queryKey: ["inbox"] });
       }
       await queryClient.invalidateQueries({
         queryKey: ["metrics", "private-balance", unlockedVault.vaultPubkey],
@@ -234,11 +256,6 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
       });
 
       const staggerDuration = batchIds.length * staggerStep;
-      const revisionTimer = setTimeout(() => {
-        setClaimStorageRevision((revision) => revision + 1);
-      }, staggerDuration);
-      staggerTimersRef.current.push(revisionTimer);
-
       settledTimerRef.current = setTimeout(() => {
         setClaimPhase("idle");
         settledTimerRef.current = null;
@@ -252,9 +269,28 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
         });
 
         if (unlockedVault) {
-          for (const id of batchIds) {
-            writeStoredClaimStatus(unlockedVault.vaultPubkey, id, "claimed");
-          }
+          const claims = await Promise.all(
+            claimablePayments.map(async (payment) => ({
+              treeIndex: toSafeNumber(payment.utxo.treeIndex),
+              insertionIndex: toSafeNumber(payment.utxo.insertionIndex),
+              encryptedClaimPayload: JSON.stringify(
+                await encryptReceiptPayload(unlockedVault.receiptEncryptionPublicKey, {
+                  version: 1,
+                  amountBaseUnits: payment.amountBaseUnits ?? payment.utxo.amount.toString(),
+                  tokenDecimals: solanaPaymentConfig.tokenDecimals,
+                  mint: solanaPaymentConfig.usdcMint,
+                  treeIndex: payment.utxo.treeIndex.toString(),
+                  insertionIndex: payment.utxo.insertionIndex.toString(),
+                  claimedAt: new Date().toISOString(),
+                }),
+              ),
+            })),
+          );
+          await markMyClaimableUtxosClaimed({ claims }).catch((error) => {
+            console.error("Failed to mark incoming UTXOs claimed", error);
+          });
+          await queryClient.invalidateQueries({ queryKey: ["claimable-utxos"] });
+        await queryClient.invalidateQueries({ queryKey: ["inbox"] });
         }
         setClaimedIds((prev) => {
           const next = new Set(prev);
@@ -266,7 +302,6 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
           for (const id of batchIds) next.delete(id);
           return next;
         });
-        setClaimStorageRevision((revision) => revision + 1);
         if (unlockedVault) {
           await queryClient.invalidateQueries({
             queryKey: ["metrics", "private-balance", unlockedVault.vaultPubkey],
@@ -282,6 +317,16 @@ export function Inbox({ onCountChange }: { onCountChange?: (count: number) => vo
         paymentIds: batchIds,
         error,
       });
+      await markMyClaimableUtxosCreated({
+        utxos: claimablePayments.map((payment) => ({
+          treeIndex: toSafeNumber(payment.utxo.treeIndex),
+          insertionIndex: toSafeNumber(payment.utxo.insertionIndex),
+        })),
+      }).catch((error) => {
+        console.error("Failed to reset incoming UTXOs after claim failure", error);
+      });
+      await queryClient.invalidateQueries({ queryKey: ["claimable-utxos"] });
+      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
       setClaimingIds((prev) => {
         const next = new Set(prev);
         for (const id of batchIds) next.delete(id);

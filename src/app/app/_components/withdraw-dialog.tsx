@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
+import {
+  calculateFee,
+  createSignerFromKeyPair as createUmbraSignerFromKeyPair,
+  type FeeSlab,
+} from "@umbra-privacy/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -48,11 +52,25 @@ type WithdrawalEstimate = {
   receiveBaseUnits: bigint;
 };
 
-const CREATE_SELF_CLAIMABLE_BASE_FEE = 1n;
-const CREATE_SELF_CLAIMABLE_COMMISSION_BPS = 30n;
-const CREATE_SELF_CLAIMABLE_FEE_DENOMINATOR = 16_384n;
-const CLAIM_PROTOCOL_FEE_NUMERATOR = 35n;
-const CLAIM_PROTOCOL_FEE_DENOMINATOR = 16_384n;
+const MAX_U64 = BigInt("18446744073709551615");
+const ZERO_FEE_SLAB = {
+  amountLowerBound: 0n,
+  amountUpperBound: MAX_U64,
+  baseFee: 0n,
+  bps: 0n,
+} satisfies FeeSlab;
+const CLAIM_PROTOCOL_FEE_SLAB = {
+  amountLowerBound: 0n,
+  amountUpperBound: MAX_U64,
+  baseFee: 0n,
+  bps: 35n,
+} satisfies FeeSlab;
+const CLAIM_RELAYER_FEE_SLAB = {
+  amountLowerBound: 0n,
+  amountUpperBound: MAX_U64,
+  baseFee: 0n,
+  bps: 35n,
+} satisfies FeeSlab;
 const TOKEN_DECIMALS = solanaPaymentConfig.tokenDecimals;
 const ONE_TOKEN_BASE_UNITS = 10n ** BigInt(TOKEN_DECIMALS);
 const PRIVATE_WITHDRAWAL_RESERVE_BASE_UNITS = ONE_TOKEN_BASE_UNITS / 100n; // 0.01 USDC
@@ -77,34 +95,29 @@ function toHumanAmount(amountBaseUnits: bigint) {
 }
 
 function estimatePrivateWithdrawal(amountBaseUnits: bigint): WithdrawalEstimate {
-  const amountAfterBaseFee = amountBaseUnits - CREATE_SELF_CLAIMABLE_BASE_FEE;
-  if (amountAfterBaseFee <= 0n) {
-    return {
-      createFeeBaseUnits: amountBaseUnits,
-      claimFeeBaseUnits: 0n,
-      totalFeeBaseUnits: amountBaseUnits,
-      utxoAmountBaseUnits: 0n,
-      receiveBaseUnits: 0n,
-    };
-  }
-
-  const createCommission =
-    (amountAfterBaseFee * CREATE_SELF_CLAIMABLE_COMMISSION_BPS) /
-    CREATE_SELF_CLAIMABLE_FEE_DENOMINATOR;
-  const utxoAmountBaseUnits = amountAfterBaseFee - createCommission;
-  const claimFeeBaseUnits =
-    (utxoAmountBaseUnits * CLAIM_PROTOCOL_FEE_NUMERATOR) /
-    CLAIM_PROTOCOL_FEE_DENOMINATOR;
+  const createFeeBaseUnits = calculateFee(
+    ZERO_FEE_SLAB,
+    amountBaseUnits,
+  ).fee;
+  const utxoAmountBaseUnits = amountBaseUnits - createFeeBaseUnits;
+  const claimProtocolFeeBaseUnits = calculateFee(
+    CLAIM_PROTOCOL_FEE_SLAB,
+    utxoAmountBaseUnits,
+  ).fee;
+  const claimRelayerFeeBaseUnits = calculateFee(
+    CLAIM_RELAYER_FEE_SLAB,
+    utxoAmountBaseUnits,
+  ).fee;
+  const claimFeeBaseUnits = claimProtocolFeeBaseUnits + claimRelayerFeeBaseUnits;
   const receiveBaseUnits =
     utxoAmountBaseUnits > claimFeeBaseUnits
       ? utxoAmountBaseUnits - claimFeeBaseUnits
       : 0n;
 
   return {
-    createFeeBaseUnits: CREATE_SELF_CLAIMABLE_BASE_FEE + createCommission,
+    createFeeBaseUnits,
     claimFeeBaseUnits,
-    totalFeeBaseUnits:
-      CREATE_SELF_CLAIMABLE_BASE_FEE + createCommission + claimFeeBaseUnits,
+    totalFeeBaseUnits: createFeeBaseUnits + claimFeeBaseUnits,
     utxoAmountBaseUnits,
     receiveBaseUnits,
   };

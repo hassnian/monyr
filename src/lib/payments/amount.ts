@@ -38,6 +38,14 @@ export function nativeAmount(amount: number, decimals: number) {
   return BigInt(Math.round(amount * 10 ** decimals));
 }
 
+export function decimalAmount(
+  amountBaseUnits: bigint | string | number,
+  decimals: number,
+) {
+  assertDecimals(decimals);
+  return Number(amountBaseUnits) / 10 ** decimals;
+}
+
 function formatRoundedBaseUnits(
   amountBaseUnits: bigint,
   decimals: number,

@@ -22,10 +22,10 @@ import { useAuth, type AuthUser } from "@/app/contexts/auth-context";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { useClaimedPaymentSummary } from "@/app/hooks/useClaimableUtxos";
 import {
   useInboxPayments,
   useInboxSummary,
-  useStoredClaimedPaymentIds,
 } from "@/app/hooks/useInboxPayments";
 
 /**
@@ -46,11 +46,8 @@ export function MetricsBand({ user }: { user: AuthUser }) {
     isFetching: isLoadingInbox,
     isLoading: isInitialLoadingInbox,
   } = useInboxPayments();
-  const settledPaymentIds = useStoredClaimedPaymentIds(
-    inboxPayments,
-    unlockedVault?.vaultPubkey,
-  );
-  const inboxSummary = useInboxSummary(inboxPayments, settledPaymentIds);
+  const inboxSummary = useInboxSummary(inboxPayments);
+  const claimedSummary = useClaimedPaymentSummary();
 
   const isActive = user.umbraStatus === "active";
   const isUnlocked =
@@ -177,19 +174,19 @@ export function MetricsBand({ user }: { user: AuthUser }) {
           <div className="min-w-0">
             <AmountDisplay
               amount={null}
-              amountBaseUnits={inboxSummary.totalReceivedBaseUnits}
+              amountBaseUnits={claimedSummary.totalReceivedBaseUnits}
               hidden={!showAmounts}
-              loading={isInitialLoadingInbox}
+              loading={isInitialLoadingInbox || claimedSummary.isLoading}
               size="xl"
               className="leading-none"
             />
             <div className="mt-2 text-[12px] text-muted-foreground/80">
-              {isInitialLoadingInbox ? (
+              {isInitialLoadingInbox || claimedSummary.isLoading ? (
                 <Skeleton className="inline-block h-3 w-44 align-middle bg-muted/50" />
               ) : (
                 <>
                   <span className="font-mono tabular">
-                    {showAmounts ? inboxSummary.totalReceivedCount : "••"}
+                    {showAmounts ? claimedSummary.totalReceivedCount : "••"}
                   </span>{" "}
                   payments · across{" "}
                   <span className="font-mono tabular">
@@ -201,11 +198,11 @@ export function MetricsBand({ user }: { user: AuthUser }) {
             </div>
           </div>
           <div className="mt-3 -mx-1 text-foreground/60">
-            <ActivitySpark data={inboxSummary.dailyFlow} height={44} />
+            <ActivitySpark data={claimedSummary.dailyFlow} height={44} />
           </div>
           <div className="mt-1.5 flex justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">
-            <span>{inboxSummary.rangeStartLabel}</span>
-            <span>{inboxSummary.rangeEndLabel}</span>
+            <span>{claimedSummary.rangeStartLabel}</span>
+            <span>{claimedSummary.rangeEndLabel}</span>
           </div>
         </Tile>
 
@@ -221,18 +218,18 @@ export function MetricsBand({ user }: { user: AuthUser }) {
         >
           <AmountDisplay
             amount={null}
-            amountBaseUnits={inboxSummary.monthToDateBaseUnits}
+            amountBaseUnits={claimedSummary.monthToDateBaseUnits}
             hidden={!showAmounts}
-            loading={isInitialLoadingInbox}
+            loading={isInitialLoadingInbox || claimedSummary.isLoading}
             size="lg"
           />
           <div className="mt-2 text-[12px] text-muted-foreground/80">
-            {isInitialLoadingInbox ? (
+            {isInitialLoadingInbox || claimedSummary.isLoading ? (
               <Skeleton className="inline-block h-3 w-20 align-middle bg-muted/50" />
             ) : (
               <>
                 <span className="font-mono tabular">
-                  {showAmounts ? inboxSummary.monthToDateCount : "••"}
+                  {showAmounts ? claimedSummary.monthToDateCount : "••"}
                 </span>{" "}
                 payments
               </>

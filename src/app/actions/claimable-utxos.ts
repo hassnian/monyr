@@ -18,9 +18,21 @@ export type ClaimableUtxoRecord = {
   treeIndex: number | null;
   insertionIndex: number | null;
   status: ClaimableUtxoStatus;
+  encryptedClaimPayload: string | null;
+  encryptedClaimPayloadVersion: number | null;
   claimedAt: Date | null;
+  lastSeenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type UtxoIndexInput = {
+  treeIndex: number;
+  insertionIndex: number;
+};
+
+type MarkClaimableUtxosClaimedInput = {
+  claims: (UtxoIndexInput & { encryptedClaimPayload: string })[];
 };
 
 type RecordClaimableUtxoInput = {
@@ -57,7 +69,10 @@ function mapClaimableUtxo(row: {
   treeIndex: number | null;
   insertionIndex: number | null;
   status: ClaimableUtxoStatus;
+  encryptedClaimPayload: string | null;
+  encryptedClaimPayloadVersion: number | null;
   claimedAt: Date | null;
+  lastSeenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): ClaimableUtxoRecord {
@@ -145,7 +160,10 @@ export async function recordClaimableUtxo(input: RecordClaimableUtxoInput) {
           treeIndex: claimableUtxos.tree_index,
           insertionIndex: claimableUtxos.insertion_index,
           status: claimableUtxos.status,
+          encryptedClaimPayload: claimableUtxos.encrypted_claim_payload,
+          encryptedClaimPayloadVersion: claimableUtxos.encrypted_claim_payload_version,
           claimedAt: claimableUtxos.claimed_at,
+          lastSeenAt: claimableUtxos.last_seen_at,
           createdAt: claimableUtxos.created_at,
           updatedAt: claimableUtxos.updated_at,
         })
@@ -163,7 +181,10 @@ export async function recordClaimableUtxo(input: RecordClaimableUtxoInput) {
           treeIndex: claimableUtxos.tree_index,
           insertionIndex: claimableUtxos.insertion_index,
           status: claimableUtxos.status,
+          encryptedClaimPayload: claimableUtxos.encrypted_claim_payload,
+          encryptedClaimPayloadVersion: claimableUtxos.encrypted_claim_payload_version,
           claimedAt: claimableUtxos.claimed_at,
+          lastSeenAt: claimableUtxos.last_seen_at,
           createdAt: claimableUtxos.created_at,
           updatedAt: claimableUtxos.updated_at,
         });
@@ -172,6 +193,111 @@ export async function recordClaimableUtxo(input: RecordClaimableUtxoInput) {
     ...record,
     handle: ownerHandle.handle,
   } satisfies ClaimableUtxoRecord;
+}
+
+export async function syncScannedClaimableUtxos({
+  handle,
+  utxos,
+}: {
+  handle: string;
+  utxos: UtxoIndexInput[];
+}) {
+  const ownerHandle = await getOwnedHandleId(handle);
+  const now = new Date();
+
+  for (const utxo of utxos) {
+    const [existing] = await getDb()
+      .select({ id: claimableUtxos.id, status: claimableUtxos.status })
+      .from(claimableUtxos)
+      .where(
+        and(
+          eq(claimableUtxos.owner_handle_id, ownerHandle.id),
+          eq(claimableUtxos.tree_index, utxo.treeIndex),
+          eq(claimableUtxos.insertion_index, utxo.insertionIndex),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      await getDb()
+        .update(claimableUtxos)
+        .set({ last_seen_at: now, updated_at: now })
+        .where(eq(claimableUtxos.id, existing.id));
+      continue;
+    }
+
+    await getDb().insert(claimableUtxos).values({
+      owner_handle_id: ownerHandle.id,
+      tree_index: utxo.treeIndex,
+      insertion_index: utxo.insertionIndex,
+      status: "created",
+      last_seen_at: now,
+      updated_at: now,
+    });
+  }
+
+  return getMyClaimableUtxos(handle);
+}
+
+async function markMyClaimableUtxosStatus(input: {
+  utxos: UtxoIndexInput[];
+  status: "created" | "claiming";
+}) {
+  const session = await requireWalletSession();
+  const now = new Date();
+
+  for (const utxo of input.utxos) {
+    await getDb()
+      .update(claimableUtxos)
+      .set({ status: input.status, updated_at: now })
+      .from(handles)
+      .where(
+        and(
+          eq(claimableUtxos.owner_handle_id, handles.id),
+          eq(handles.owner_wallet_lookup, getOwnerWalletLookup(session.walletAddress)),
+          eq(claimableUtxos.tree_index, utxo.treeIndex),
+          eq(claimableUtxos.insertion_index, utxo.insertionIndex),
+        ),
+      );
+  }
+
+  return true;
+}
+
+export async function markMyClaimableUtxosCreated(input: { utxos: UtxoIndexInput[] }) {
+  return markMyClaimableUtxosStatus({ ...input, status: "created" });
+}
+
+export async function markMyClaimableUtxosClaiming(input: { utxos: UtxoIndexInput[] }) {
+  return markMyClaimableUtxosStatus({ ...input, status: "claiming" });
+}
+
+export async function markMyClaimableUtxosClaimed(input: MarkClaimableUtxosClaimedInput) {
+  const session = await requireWalletSession();
+  const now = new Date();
+
+  for (const claim of input.claims) {
+    await getDb()
+      .update(claimableUtxos)
+      .set({
+        status: "claimed",
+        encrypted_claim_payload: claim.encryptedClaimPayload,
+        encrypted_claim_payload_version: 1,
+        claimed_at: now,
+        updated_at: now,
+      })
+      .from(handles)
+      .where(
+        and(
+          eq(claimableUtxos.owner_handle_id, handles.id),
+          eq(handles.owner_wallet_lookup, getOwnerWalletLookup(session.walletAddress)),
+          eq(claimableUtxos.tree_index, claim.treeIndex),
+          eq(claimableUtxos.insertion_index, claim.insertionIndex),
+        ),
+      );
+  }
+
+  return true;
 }
 
 export async function getMyClaimableUtxos(handle?: string) {
@@ -194,7 +320,10 @@ export async function getMyClaimableUtxos(handle?: string) {
       treeIndex: claimableUtxos.tree_index,
       insertionIndex: claimableUtxos.insertion_index,
       status: claimableUtxos.status,
+      encryptedClaimPayload: claimableUtxos.encrypted_claim_payload,
+      encryptedClaimPayloadVersion: claimableUtxos.encrypted_claim_payload_version,
       claimedAt: claimableUtxos.claimed_at,
+      lastSeenAt: claimableUtxos.last_seen_at,
       createdAt: claimableUtxos.created_at,
       updatedAt: claimableUtxos.updated_at,
     })
@@ -248,7 +377,10 @@ export async function markMyClaimableUtxoClaimed(input: MarkClaimableUtxoClaimed
       treeIndex: claimableUtxos.tree_index,
       insertionIndex: claimableUtxos.insertion_index,
       status: claimableUtxos.status,
+      encryptedClaimPayload: claimableUtxos.encrypted_claim_payload,
+      encryptedClaimPayloadVersion: claimableUtxos.encrypted_claim_payload_version,
       claimedAt: claimableUtxos.claimed_at,
+      lastSeenAt: claimableUtxos.last_seen_at,
       createdAt: claimableUtxos.created_at,
       updatedAt: claimableUtxos.updated_at,
     });

@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import {
+  getMyClaimableUtxos,
+  syncScannedClaimableUtxos,
+} from "@/app/actions/claimable-utxos";
 import { getMyPaymentMetadata } from "@/app/actions/payment-metadata";
 import { useAuth } from "@/app/contexts/auth-context";
 import { useUmbra, type UmbraClaimableUtxo } from "@/app/hooks/useUmbra";
@@ -21,40 +25,27 @@ export type PaymentMetadataPayload = {
   createdAt?: string;
 };
 
-export type InboxPayment = Payment & {
+export type ClaimPayload = {
+  version: 1;
+  amountBaseUnits: string;
+  tokenDecimals: number;
+  mint: string;
+  treeIndex: string;
+  insertionIndex: string;
+  claimedAt: string;
+};
+
+export type PendingInboxPayment = Payment & {
+  source: "scan";
   utxo: UmbraClaimableUtxo;
 };
 
-export type StoredClaimStatus = "claiming" | "claimed";
+export type ClaimedInboxPayment = Payment & {
+  source: "claim_receipt";
+  utxo?: never;
+};
 
-const CLAIM_STATUS_EVENT = "hush:umbra-claim-status-changed";
-
-export function getStoredClaimKey(vaultPubkey: string, paymentId: string) {
-  return `hush:umbra-claim:${vaultPubkey}:${paymentId}`;
-}
-
-export function readStoredClaimStatus(vaultPubkey: string, paymentId: string) {
-  try {
-    return window.localStorage.getItem(
-      getStoredClaimKey(vaultPubkey, paymentId),
-    ) as StoredClaimStatus | null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeStoredClaimStatus(
-  vaultPubkey: string,
-  paymentId: string,
-  status: StoredClaimStatus,
-) {
-  try {
-    window.localStorage.setItem(getStoredClaimKey(vaultPubkey, paymentId), status);
-    window.dispatchEvent(new CustomEvent(CLAIM_STATUS_EVENT));
-  } catch {
-    // Non-critical UI dedupe only.
-  }
-}
+export type InboxPayment = PendingInboxPayment | ClaimedInboxPayment;
 
 function getFirstClaimCelebratedKey(vaultPubkey: string) {
   return `hush:first-claim-celebrated:${vaultPubkey}`;
@@ -74,37 +65,6 @@ export function markFirstClaimCelebrated(vaultPubkey: string) {
   } catch {
     // Confetti is decorative — silent failure is fine.
   }
-}
-
-export function useStoredClaimedPaymentIds(
-  payments: readonly Pick<Payment, "id">[],
-  vaultPubkey?: string | null,
-) {
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    const bump = () => setRevision((value) => value + 1);
-    window.addEventListener(CLAIM_STATUS_EVENT, bump);
-    window.addEventListener("storage", bump);
-    return () => {
-      window.removeEventListener(CLAIM_STATUS_EVENT, bump);
-      window.removeEventListener("storage", bump);
-    };
-  }, []);
-
-  return useMemo(() => {
-    void revision;
-    if (!vaultPubkey) return new Set<string>();
-
-    const ids = new Set<string>();
-    for (const payment of payments) {
-      const status = readStoredClaimStatus(vaultPubkey, payment.id);
-      if (status === "claimed") {
-        ids.add(payment.id);
-      }
-    }
-    return ids;
-  }, [payments, vaultPubkey, revision]);
 }
 
 function takeMatchingMetadata(
@@ -134,22 +94,30 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+function toSafeNumber(value: string | number | bigint) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) throw new Error("UTXO index exceeds safe integer range");
+  return number;
+}
+
 export function useInboxPayments() {
   const { user, unlockedVault } = useAuth();
   const { scanRecentClaimableUtxos } = useUmbra();
-  const { isUnlocked } = useUnlockDashboard();
+  const { isActive, isUnlocked } = useUnlockDashboard();
 
   return useQuery<InboxPayment[]>({
-    enabled: isUnlocked && Boolean(unlockedVault),
+    enabled: isActive && isUnlocked && Boolean(unlockedVault),
     queryKey: ["inbox", "claimable", user?.handle, unlockedVault?.vaultPubkey],
     queryFn: async () => {
-      if (!unlockedVault) return [];
+      if (!isActive || !unlockedVault) return [];
       const [result, metadataRows] = await Promise.all([
         scanRecentClaimableUtxos({
           signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
         }),
         getMyPaymentMetadata(),
       ]);
+
+
       const metadata = await Promise.all(
         metadataRows.map(async (row) =>
           decryptReceiptPayload<PaymentMetadataPayload>(
@@ -165,11 +133,35 @@ export function useInboxPayments() {
         map.set(payload.amountBaseUnits, matches);
         return map;
       }, new Map<string, PaymentMetadataPayload[]>());
+      const claimedMetadataByAmount = new Map(
+        Array.from(metadataByAmount, ([amount, payloads]) => [amount, [...payloads]]),
+      );
 
       // TODO: replace amount-only metadata matching with a stable UTXO index
       // match (commitmentIndex/leafIndex) once creation stores that index.
-      const claimable = [...result.received, ...result.publicReceived];
-      return claimable.map((utxo) => {
+      const scannedClaimable = [...result.received, ...result.publicReceived];
+      const claimableRecords = user?.handle
+        ? await syncScannedClaimableUtxos({
+            handle: user.handle,
+            utxos: scannedClaimable.map((utxo) => ({
+              treeIndex: toSafeNumber(utxo.treeIndex),
+              insertionIndex: toSafeNumber(utxo.insertionIndex),
+            })),
+          }).catch((error) => {
+              console.error("Failed to sync scanned claimable UTXOs", error);
+            return getMyClaimableUtxos(user.handle).catch(() => []);
+          })
+        : [];
+      const statusByIndex = new Map(
+        claimableRecords
+          .filter((record) => record.treeIndex !== null && record.insertionIndex !== null)
+          .map((record) => [`${record.treeIndex}:${record.insertionIndex}`, record.status]),
+      );
+      const claimable = scannedClaimable.filter(
+        (utxo) => statusByIndex.get(`${utxo.treeIndex}:${utxo.insertionIndex}`) !== "claimed",
+      );
+
+      const pendingPayments: PendingInboxPayment[] = claimable.map((utxo) => {
         const amountBaseUnits = utxo.amount.toString();
         const metadata = takeMatchingMetadata(metadataByAmount, amountBaseUnits);
 
@@ -183,21 +175,67 @@ export function useInboxPayments() {
           subPath: metadata?.subPath ?? null,
           subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
           createdAt: metadata?.createdAt ?? new Date().toISOString(),
-          status: "pending",
+          status:
+            statusByIndex.get(`${utxo.treeIndex}:${utxo.insertionIndex}`) === "claiming"
+              ? "claiming"
+              : "pending",
           txSig: metadata?.utxoCreateSignature?.slice(0, 8) ?? `${utxo.treeIndex}:${utxo.insertionIndex}`,
+          source: "scan",
           utxo,
-        } satisfies InboxPayment;
+        } satisfies PendingInboxPayment;
       });
+
+      const claimedPayments: (ClaimedInboxPayment | null)[] = await Promise.all(
+        claimableRecords
+          .filter(
+            (record) =>
+              record.status === "claimed" &&
+              record.treeIndex !== null &&
+              record.insertionIndex !== null &&
+              Boolean(record.encryptedClaimPayload),
+          )
+          .map(async (record) => {
+            const payload = await decryptReceiptPayload<ClaimPayload>(
+              unlockedVault.receiptEncryptionPrivateKey,
+              JSON.parse(record.encryptedClaimPayload!) as EncryptedReceiptPayload,
+            ).catch(() => null);
+
+            if (!payload) return null;
+
+            const metadata = takeMatchingMetadata(
+              claimedMetadataByAmount,
+              payload.amountBaseUnits,
+            );
+
+            return {
+              id: `${record.treeIndex}:${record.insertionIndex}`,
+              amount: toTokenAmount(payload.amountBaseUnits),
+              amountBaseUnits: payload.amountBaseUnits,
+              memo: metadata?.memo?.trim() || null,
+              payerLabel: null,
+              payerPubkey: null,
+              subPath: metadata?.subPath ?? null,
+              subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
+              createdAt: record.claimedAt?.toISOString() ?? payload.claimedAt,
+              status: "claimed",
+              txSig: `${record.treeIndex}:${record.insertionIndex}`,
+              source: "claim_receipt",
+            } satisfies ClaimedInboxPayment;
+          }),
+      );
+
+      const decryptedClaimedPayments = claimedPayments.filter(
+        (payment): payment is ClaimedInboxPayment => payment !== null,
+      );
+
+      return [...pendingPayments, ...decryptedClaimedPayments];
     },
     staleTime: 60_000,
     retry: false,
   });
 }
 
-export function useInboxSummary(
-  payments: readonly Payment[],
-  settledPaymentIds: ReadonlySet<string> = new Set(),
-) {
+export function useInboxSummary(payments: readonly Payment[]) {
   return useMemo(() => {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -213,7 +251,7 @@ export function useInboxSummary(
       0n,
     );
     const pendingPayments = payments.filter(
-      (payment) => payment.status === "pending" && !settledPaymentIds.has(payment.id),
+      (payment) => payment.status === "pending" || payment.status === "claiming",
     );
     const pendingBaseUnits = pendingPayments.reduce(
       (sum, payment) => sum + BigInt(payment.amountBaseUnits ?? 0),
@@ -257,5 +295,5 @@ export function useInboxSummary(
       rangeEndLabel: end.toLocaleDateString("en", { month: "short", day: "2-digit", timeZone: "UTC" }),
       activeLinks: 0,
     };
-  }, [payments, settledPaymentIds]);
+  }, [payments]);
 }

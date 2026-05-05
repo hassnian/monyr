@@ -1,0 +1,599 @@
+{
+  "id": "d28162a8-3594-4918-80f6-65d8ca136460",
+  "prevId": "483077b8-218d-479a-93c3-6f3f1366cdb6",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.claimable_utxos": {
+      "name": "claimable_utxos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_handle_id": {
+          "name": "owner_handle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "create_signature": {
+          "name": "create_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "queue_signature": {
+          "name": "queue_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "callback_signature": {
+          "name": "callback_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tree_index": {
+          "name": "tree_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "insertion_index": {
+          "name": "insertion_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "claimable_utxo_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'created'"
+        },
+        "encrypted_claim_payload": {
+          "name": "encrypted_claim_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "encrypted_claim_payload_version": {
+          "name": "encrypted_claim_payload_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claimable_utxos_owner_handle_id_idx": {
+          "name": "claimable_utxos_owner_handle_id_idx",
+          "columns": [
+            {
+              "expression": "owner_handle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claimable_utxos_status_idx": {
+          "name": "claimable_utxos_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claimable_utxos_owner_handle_id_handles_id_fk": {
+          "name": "claimable_utxos_owner_handle_id_handles_id_fk",
+          "tableFrom": "claimable_utxos",
+          "tableTo": "handles",
+          "columnsFrom": [
+            "owner_handle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "claimable_utxos_create_signature_unique": {
+          "name": "claimable_utxos_create_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "create_signature"
+          ]
+        },
+        "claimable_utxos_queue_signature_unique": {
+          "name": "claimable_utxos_queue_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "queue_signature"
+          ]
+        },
+        "claimable_utxos_callback_signature_unique": {
+          "name": "claimable_utxos_callback_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "callback_signature"
+          ]
+        },
+        "claimable_utxos_tree_insertion_unique": {
+          "name": "claimable_utxos_tree_insertion_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tree_index",
+            "insertion_index"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.handles": {
+      "name": "handles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "handle": {
+          "name": "handle",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vault_pubkey": {
+          "name": "vault_pubkey",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_vault_secret": {
+          "name": "encrypted_vault_secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_encryption_pubkey": {
+          "name": "receipt_encryption_pubkey",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_wallet_lookup": {
+          "name": "owner_wallet_lookup",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "umbra_status": {
+          "name": "umbra_status",
+          "type": "umbra_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'inactive'"
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "handles_owner_wallet_lookup_idx": {
+          "name": "handles_owner_wallet_lookup_idx",
+          "columns": [
+            {
+              "expression": "owner_wallet_lookup",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "handles_handle_unique": {
+          "name": "handles_handle_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "handle"
+          ]
+        },
+        "handles_vault_pubkey_unique": {
+          "name": "handles_vault_pubkey_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "vault_pubkey"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payment_contexts": {
+      "name": "payment_contexts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "handle_id": {
+          "name": "handle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "payment_context_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "varchar(160)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "payment_context_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "config": {
+          "name": "config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "payment_contexts_handle_id_kind_idx": {
+          "name": "payment_contexts_handle_id_kind_idx",
+          "columns": [
+            {
+              "expression": "handle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "payment_contexts_handle_id_handles_id_fk": {
+          "name": "payment_contexts_handle_id_handles_id_fk",
+          "tableFrom": "payment_contexts",
+          "tableTo": "handles",
+          "columnsFrom": [
+            "handle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payment_contexts_handle_id_path_unique": {
+          "name": "payment_contexts_handle_id_path_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "handle_id",
+            "path"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payment_metadata": {
+      "name": "payment_metadata",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "handle_id": {
+          "name": "handle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_id": {
+          "name": "context_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "utxo_create_signature": {
+          "name": "utxo_create_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_payload": {
+          "name": "encrypted_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_payload_version": {
+          "name": "encrypted_payload_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "payment_metadata_handle_id_idx": {
+          "name": "payment_metadata_handle_id_idx",
+          "columns": [
+            {
+              "expression": "handle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "payment_metadata_context_id_idx": {
+          "name": "payment_metadata_context_id_idx",
+          "columns": [
+            {
+              "expression": "context_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "payment_metadata_handle_id_handles_id_fk": {
+          "name": "payment_metadata_handle_id_handles_id_fk",
+          "tableFrom": "payment_metadata",
+          "tableTo": "handles",
+          "columnsFrom": [
+            "handle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "payment_metadata_context_id_payment_contexts_id_fk": {
+          "name": "payment_metadata_context_id_payment_contexts_id_fk",
+          "tableFrom": "payment_metadata",
+          "tableTo": "payment_contexts",
+          "columnsFrom": [
+            "context_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payment_metadata_utxo_create_signature_unique": {
+          "name": "payment_metadata_utxo_create_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "utxo_create_signature"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.claimable_utxo_status": {
+      "name": "claimable_utxo_status",
+      "schema": "public",
+      "values": [
+        "created",
+        "claiming",
+        "claimed"
+      ]
+    },
+    "public.payment_context_kind": {
+      "name": "payment_context_kind",
+      "schema": "public",
+      "values": [
+        "label",
+        "invoice",
+        "product",
+        "claim_link"
+      ]
+    },
+    "public.payment_context_status": {
+      "name": "payment_context_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "archived",
+        "paid",
+        "expired",
+        "cancelled"
+      ]
+    },
+    "public.umbra_status": {
+      "name": "umbra_status",
+      "schema": "public",
+      "values": [
+        "inactive",
+        "active"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

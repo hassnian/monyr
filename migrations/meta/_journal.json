@@ -8,6 +8,13 @@
       "when": 1777290384090,
       "tag": "0000_jittery_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777983299220,
+      "tag": "0001_bumpy_brother_voodoo",
+      "breakpoints": true
     }
   ]
 }

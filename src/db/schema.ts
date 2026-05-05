@@ -22,6 +22,7 @@ export const paymentContextStatusEnum = pgEnum("payment_context_status", [
 
 export const claimableUtxoStatusEnum = pgEnum("claimable_utxo_status", [
   "created",
+  "claiming",
   "claimed",
 ]);
 
@@ -81,7 +82,10 @@ export const claimableUtxos = pgTable(
     tree_index: integer("tree_index"),
     insertion_index: integer("insertion_index"),
     status: claimableUtxoStatusEnum("status").notNull().default("created"),
+    encrypted_claim_payload: text("encrypted_claim_payload"),
+    encrypted_claim_payload_version: integer("encrypted_claim_payload_version"),
     claimed_at: timestamp(),
+    last_seen_at: timestamp(),
     created_at: timestamp().notNull().defaultNow(),
     updated_at: timestamp().notNull().defaultNow(),
   },
