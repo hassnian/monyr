@@ -100,6 +100,26 @@ function toSafeNumber(value: string | number | bigint) {
   return number;
 }
 
+function getPaymentSubLabel(metadata: PaymentMetadataPayload | null) {
+  if (metadata?.invoiceId) return `Invoice ${metadata.invoiceId}`;
+  if (metadata?.subPath?.startsWith("invoice/")) {
+    return `Invoice ${metadata.subPath.slice("invoice/".length)}`;
+  }
+  return null;
+}
+
+type RawInboxPayment = {
+  treeIndex: number;
+  insertionIndex: number;
+  amountBaseUnits: string;
+  status: Payment["status"];
+  fallbackCreatedAt: string;
+  txSigFallback: string;
+} & (
+  | { source: "scan"; utxo: UmbraClaimableUtxo }
+  | { source: "claim_receipt" }
+);
+
 export function useInboxPayments() {
   const { user, unlockedVault } = useAuth();
   const { scanRecentClaimableUtxos } = useUmbra();
@@ -133,9 +153,6 @@ export function useInboxPayments() {
         map.set(payload.amountBaseUnits, matches);
         return map;
       }, new Map<string, PaymentMetadataPayload[]>());
-      const claimedMetadataByAmount = new Map(
-        Array.from(metadataByAmount, ([amount, payloads]) => [amount, [...payloads]]),
-      );
 
       // TODO: replace amount-only metadata matching with a stable UTXO index
       // match (commitmentIndex/leafIndex) once creation stores that index.
@@ -157,35 +174,30 @@ export function useInboxPayments() {
           .filter((record) => record.treeIndex !== null && record.insertionIndex !== null)
           .map((record) => [`${record.treeIndex}:${record.insertionIndex}`, record.status]),
       );
-      const claimable = scannedClaimable.filter(
-        (utxo) => statusByIndex.get(`${utxo.treeIndex}:${utxo.insertionIndex}`) !== "claimed",
-      );
+      const rawPendingPayments: RawInboxPayment[] = scannedClaimable
+        .filter(
+          (utxo) =>
+            statusByIndex.get(`${utxo.treeIndex}:${utxo.insertionIndex}`) !==
+            "claimed",
+        )
+        .map((utxo) => {
+          const treeIndex = toSafeNumber(utxo.treeIndex);
+          const insertionIndex = toSafeNumber(utxo.insertionIndex);
+          const status = statusByIndex.get(`${treeIndex}:${insertionIndex}`);
 
-      const pendingPayments: PendingInboxPayment[] = claimable.map((utxo) => {
-        const amountBaseUnits = utxo.amount.toString();
-        const metadata = takeMatchingMetadata(metadataByAmount, amountBaseUnits);
+          return {
+            treeIndex,
+            insertionIndex,
+            amountBaseUnits: utxo.amount.toString(),
+            status: status === "claiming" ? "claiming" : "pending",
+            fallbackCreatedAt: new Date().toISOString(),
+            txSigFallback: `${treeIndex}:${insertionIndex}`,
+            source: "scan",
+            utxo,
+          } satisfies RawInboxPayment;
+        });
 
-        return {
-          id: `${utxo.treeIndex}:${utxo.insertionIndex}`,
-          amount: toTokenAmount(utxo.amount),
-          amountBaseUnits,
-          memo: metadata?.memo?.trim() || null,
-          payerLabel: null,
-          payerPubkey: null,
-          subPath: metadata?.subPath ?? null,
-          subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
-          createdAt: metadata?.createdAt ?? new Date().toISOString(),
-          status:
-            statusByIndex.get(`${utxo.treeIndex}:${utxo.insertionIndex}`) === "claiming"
-              ? "claiming"
-              : "pending",
-          txSig: metadata?.utxoCreateSignature?.slice(0, 8) ?? `${utxo.treeIndex}:${utxo.insertionIndex}`,
-          source: "scan",
-          utxo,
-        } satisfies PendingInboxPayment;
-      });
-
-      const claimedPayments: (ClaimedInboxPayment | null)[] = await Promise.all(
+      const rawClaimedPayments = await Promise.all(
         claimableRecords
           .filter(
             (record) =>
@@ -200,35 +212,50 @@ export function useInboxPayments() {
               JSON.parse(record.encryptedClaimPayload!) as EncryptedReceiptPayload,
             ).catch(() => null);
 
-            if (!payload) return null;
-
-            const metadata = takeMatchingMetadata(
-              claimedMetadataByAmount,
-              payload.amountBaseUnits,
-            );
+            if (!payload || record.treeIndex === null || record.insertionIndex === null) {
+              return null;
+            }
 
             return {
-              id: `${record.treeIndex}:${record.insertionIndex}`,
-              amount: toTokenAmount(payload.amountBaseUnits),
+              treeIndex: record.treeIndex,
+              insertionIndex: record.insertionIndex,
               amountBaseUnits: payload.amountBaseUnits,
-              memo: metadata?.memo?.trim() || null,
-              payerLabel: null,
-              payerPubkey: null,
-              subPath: metadata?.subPath ?? null,
-              subLabel: metadata?.invoiceId ? `Invoice ${metadata.invoiceId}` : null,
-              createdAt: record.claimedAt?.toISOString() ?? payload.claimedAt,
               status: "claimed",
-              txSig: `${record.treeIndex}:${record.insertionIndex}`,
+              fallbackCreatedAt: record.claimedAt?.toISOString() ?? payload.claimedAt,
+              txSigFallback: `${record.treeIndex}:${record.insertionIndex}`,
               source: "claim_receipt",
-            } satisfies ClaimedInboxPayment;
+            } satisfies RawInboxPayment;
           }),
       );
 
-      const decryptedClaimedPayments = claimedPayments.filter(
-        (payment): payment is ClaimedInboxPayment => payment !== null,
-      );
+      const rawPayments = [...rawPendingPayments, ...rawClaimedPayments]
+        .filter((payment): payment is RawInboxPayment => payment !== null)
+        .sort((a, b) =>
+          a.treeIndex === b.treeIndex
+            ? a.insertionIndex - b.insertionIndex
+            : a.treeIndex - b.treeIndex,
+        );
 
-      return [...pendingPayments, ...decryptedClaimedPayments];
+      return rawPayments.map((payment) => {
+        const metadata = takeMatchingMetadata(metadataByAmount, payment.amountBaseUnits);
+        const common = {
+          id: `${payment.treeIndex}:${payment.insertionIndex}`,
+          amount: toTokenAmount(payment.amountBaseUnits),
+          amountBaseUnits: payment.amountBaseUnits,
+          memo: metadata?.memo?.trim() || null,
+          payerLabel: null,
+          payerPubkey: null,
+          subPath: metadata?.subPath ?? null,
+          subLabel: getPaymentSubLabel(metadata),
+          createdAt: metadata?.createdAt ?? payment.fallbackCreatedAt,
+          status: payment.status,
+          txSig: metadata?.utxoCreateSignature?.slice(0, 8) ?? payment.txSigFallback,
+        } satisfies Payment;
+
+        return payment.source === "scan"
+          ? ({ ...common, source: "scan", utxo: payment.utxo } satisfies PendingInboxPayment)
+          : ({ ...common, source: "claim_receipt" } satisfies ClaimedInboxPayment);
+      });
     },
     staleTime: 60_000,
     retry: false,

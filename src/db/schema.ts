@@ -76,9 +76,6 @@ export const claimableUtxos = pgTable(
     owner_handle_id: uuid("owner_handle_id")
       .notNull()
       .references(() => handles.id, { onDelete: "cascade" }),
-    create_signature: text("create_signature"),
-    queue_signature: text("queue_signature"),
-    callback_signature: text("callback_signature"),
     tree_index: integer("tree_index"),
     insertion_index: integer("insertion_index"),
     status: claimableUtxoStatusEnum("status").notNull().default("created"),
@@ -90,9 +87,6 @@ export const claimableUtxos = pgTable(
     updated_at: timestamp().notNull().defaultNow(),
   },
   (table) => [
-    unique("claimable_utxos_create_signature_unique").on(table.create_signature),
-    unique("claimable_utxos_queue_signature_unique").on(table.queue_signature),
-    unique("claimable_utxos_callback_signature_unique").on(table.callback_signature),
     unique("claimable_utxos_tree_insertion_unique").on(table.tree_index, table.insertion_index),
     index("claimable_utxos_owner_handle_id_idx").on(table.owner_handle_id),
     index("claimable_utxos_status_idx").on(table.status),
