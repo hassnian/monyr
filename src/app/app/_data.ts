@@ -17,7 +17,7 @@ export type Payment = {
   /** Optional label users have pinned to a repeat payer ("Acme Corp"). */
   payerLabel: string | null;
   amount: number;
-  /** Native/base units for exact token display when present. USDC has 6 decimals. */
+  /** Native/base units for exact token display when present. */
   amountBaseUnits?: string;
   /** Already decrypted (locally) by MVK. */
   memo: string | null;

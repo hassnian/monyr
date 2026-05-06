@@ -25,6 +25,7 @@ import {
   type PaymentContext,
 } from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -336,7 +337,7 @@ function PreviewCard({
             <AmountDisplay amount={amount} size="lg" />
           ) : (
             <span className="font-mono tabular text-[20px] text-muted-foreground/40">
-              0.00 <span className="text-[11px] uppercase">USDC</span>
+              0.00 <span className="text-[11px]">{solanaPaymentConfig.tokenSymbol}</span>
             </span>
           )}
         </div>

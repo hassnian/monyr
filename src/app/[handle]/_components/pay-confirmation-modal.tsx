@@ -16,7 +16,7 @@ import { AmountDisplay } from "@/components/payments/amount-display";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, Loader2, Lock } from "lucide-react";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
-import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
+import { sendQuickPayment } from "@/lib/payments/quick-pay";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
 import { markInvoicePaymentContextPaid } from "@/app/actions/payment-contexts";
 import { formatDecimalAmount, nativeAmount } from "@/lib/payments/amount";
@@ -104,7 +104,7 @@ export function PayConfirmationModal({
       version: 1,
       amountBaseUnits: nativeAmount(amount, solanaPaymentConfig.tokenDecimals).toString(),
       tokenDecimals: solanaPaymentConfig.tokenDecimals,
-      mint: solanaPaymentConfig.usdcMint,
+      mint: solanaPaymentConfig.tokenMint,
       handle,
       memo,
       invoiceId,
@@ -140,7 +140,7 @@ export function PayConfirmationModal({
     setStep("quick-sending");
 
     try {
-      const result = await sendQuickUsdcPayment({
+      const result = await sendQuickPayment({
         wallet: connectedWallet.wallet,
         account: connectedWallet.account,
         destinationOwner: vaultPubkey,
@@ -401,7 +401,7 @@ function ConfirmStep({
           onClick={onPay}
           className="h-12 w-full rounded-xl text-base font-semibold ring-1 ring-primary/30 shadow-[0_0_0_1px_rgba(240,184,122,0.2),0_8px_24px_-8px_rgba(240,184,122,0.45)] transition-all hover:bg-primary/90 hover:shadow-[0_0_0_1px_rgba(240,184,122,0.28),0_12px_32px_-8px_rgba(240,184,122,0.55)]"
         >
-          Pay {formatDecimalAmount(amount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC
+          Pay {formatDecimalAmount(amount, { decimals: solanaPaymentConfig.tokenDecimals })} {solanaPaymentConfig.tokenSymbol}
         </Button>
 
         {isUmbraActive && (
@@ -552,7 +552,7 @@ function QuickSendingStep() {
         Sending payment.
       </h3>
       <p className="mx-auto mt-2 max-w-[32ch] text-sm text-muted-foreground">
-        Quick Pay uses a normal USDC transfer to the recipient’s Hush Vault.
+        Quick Pay uses a normal {solanaPaymentConfig.tokenSymbol} transfer to the recipient’s Hush Vault.
       </p>*/}
     </div>
   );

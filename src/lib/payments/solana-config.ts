@@ -4,9 +4,41 @@ import type { IdentifierString } from "@wallet-standard/base";
 const DEVNET_RPC_URL = "https://api.devnet.solana.com";
 const MAINNET_RPC_URL = "https://api.mainnet-beta.solana.com";
 
-const DEVNET_USDC_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-const MAINNET_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const USDC_DECIMALS = 6;
+const DEVNET_PAYMENT_TOKEN_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+const MAINNET_PAYMENT_TOKEN_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const DEFAULT_PAYMENT_TOKEN_DECIMALS = 6;
+
+const PAYMENT_TOKEN_DEFAULTS = {
+  "solana:mainnet": {
+    mint: MAINNET_PAYMENT_TOKEN_MINT,
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: DEFAULT_PAYMENT_TOKEN_DECIMALS,
+  },
+  "solana:mainnet-beta": {
+    mint: MAINNET_PAYMENT_TOKEN_MINT,
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: DEFAULT_PAYMENT_TOKEN_DECIMALS,
+  },
+  "solana:devnet": {
+    mint: DEVNET_PAYMENT_TOKEN_MINT,
+    symbol: "dUSDC",
+    name: "Dummy USDC",
+    decimals: DEFAULT_PAYMENT_TOKEN_DECIMALS,
+  },
+  "solana:testnet": {
+    mint: DEVNET_PAYMENT_TOKEN_MINT,
+    symbol: "dUSDC",
+    name: "Dummy USDC",
+    decimals: DEFAULT_PAYMENT_TOKEN_DECIMALS,
+  },
+} satisfies Record<SolanaPaymentChain, {
+  mint: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+}>;
 
 export type SolanaPaymentChain =
   | "solana:mainnet"
@@ -17,8 +49,10 @@ export type SolanaPaymentChain =
 export type SolanaPaymentConfig = {
   chain: IdentifierString;
   rpcUrl: string;
-  usdcMint: Address;
+  tokenMint: Address;
   tokenDecimals: number;
+  tokenSymbol: string;
+  tokenName: string;
 };
 
 function normalizeSolanaChain(chain?: string): SolanaPaymentChain {
@@ -47,17 +81,11 @@ function defaultRpcUrl(chain: SolanaPaymentChain) {
     : DEVNET_RPC_URL;
 }
 
-function defaultUsdcMint(chain: SolanaPaymentChain) {
-  return chain === "solana:mainnet" || chain === "solana:mainnet-beta"
-    ? MAINNET_USDC_MINT
-    : DEVNET_USDC_MINT;
-}
-
-function tokenDecimals() {
+function tokenDecimals(chain: SolanaPaymentChain) {
   const decimals = process.env.NEXT_PUBLIC_PAYMENT_TOKEN_DECIMALS;
 
   if (!decimals) {
-    return USDC_DECIMALS;
+    return PAYMENT_TOKEN_DEFAULTS[chain].decimals;
   }
 
   const parsedDecimals = Number.parseInt(decimals, 10);
@@ -70,12 +98,17 @@ function tokenDecimals() {
 }
 
 const chain = normalizeSolanaChain(process.env.NEXT_PUBLIC_SOLANA_CHAIN);
+const tokenMint = address(
+  process.env.NEXT_PUBLIC_PAYMENT_TOKEN_MINT ?? PAYMENT_TOKEN_DEFAULTS[chain].mint,
+);
 
 export const solanaPaymentConfig: SolanaPaymentConfig = {
   chain,
   rpcUrl: process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? defaultRpcUrl(chain),
-  usdcMint: address(process.env.NEXT_PUBLIC_USDC_MINT ?? defaultUsdcMint(chain)),
-  tokenDecimals: tokenDecimals(),
+  tokenMint,
+  tokenDecimals: tokenDecimals(chain),
+  tokenSymbol: process.env.NEXT_PUBLIC_PAYMENT_TOKEN_SYMBOL ?? PAYMENT_TOKEN_DEFAULTS[chain].symbol,
+  tokenName: process.env.NEXT_PUBLIC_PAYMENT_TOKEN_NAME ?? PAYMENT_TOKEN_DEFAULTS[chain].name,
 };
 
 export function solscanUrl(path: string) {

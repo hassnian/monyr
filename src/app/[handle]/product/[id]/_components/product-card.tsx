@@ -12,6 +12,7 @@ import { useAuth } from "@/app/contexts/auth-context";
 import { useWallet } from "@/app/contexts/wallet-context";
 import { getMyProductPurchase, recordProductPurchase } from "@/app/actions/product-purchases";
 import { PayConfirmationModal } from "@/app/[handle]/_components/pay-confirmation-modal";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
 import { ProductCover } from "./product-cover";
 import type { UmbraStatus } from "@/app/[handle]/_components/profile.types";
@@ -266,7 +267,7 @@ export function ProductCard({
                   Price
                 </span>
                 <span className="text-[11px] text-muted-foreground/70">
-                  USDC · Solana
+                  {solanaPaymentConfig.tokenSymbol} · Solana
                 </span>
               </div>
               <div className="mt-3 pb-1">

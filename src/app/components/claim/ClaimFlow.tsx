@@ -1,6 +1,7 @@
 "use client";
 
 import { handleUrl } from "@/lib/brand";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -225,7 +226,7 @@ function ClaimedView({ handle }: { handle: string }) {
       </h1>
 
       <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-        Your profile is ready. Paste the link anywhere and accept USDC
+        Your profile is ready. Paste the link anywhere and accept {solanaPaymentConfig.tokenSymbol}
         privately — no wallet address required.
       </p>
 

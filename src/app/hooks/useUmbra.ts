@@ -362,15 +362,15 @@ export function useUmbra() {
     }
   }
 
-  async function getPrivateUsdcBalance({
+  async function getPrivateTokenBalance({
     signer: providedSigner,
   }: { signer?: IUmbraSigner } = {}) {
     const signer = providedSigner ?? getConnectedSigner();
     const client = await getClient(signer);
     const queryBalance = getEncryptedBalanceQuerierFunction({ client });
-    const balances = await queryBalance([solanaPaymentConfig.usdcMint]);
+    const balances = await queryBalance([solanaPaymentConfig.tokenMint]);
 
-    return balances.get(solanaPaymentConfig.usdcMint) ?? {
+    return balances.get(solanaPaymentConfig.tokenMint) ?? {
       state: "non_existent" as const,
     };
   }
@@ -407,7 +407,7 @@ export function useUmbra() {
         createUtxo({
           amount: amountInBaseUnits as U64,
           destinationAddress: toAddress(address),
-          mint: solanaPaymentConfig.usdcMint,
+          mint: solanaPaymentConfig.tokenMint,
         });
 
       try {
@@ -611,7 +611,7 @@ export function useUmbra() {
         {
           amount: amountBaseUnits as U64,
           destinationAddress: toAddress(destinationAddress),
-          mint: solanaPaymentConfig.usdcMint,
+          mint: solanaPaymentConfig.tokenMint,
         },
         { generationIndex },
       );
@@ -702,7 +702,7 @@ export function useUmbra() {
     return result;
   }
 
-  async function withdrawPrivateUsdcToWallet({
+  async function withdrawPrivateTokenToWallet({
     signer: providedSigner,
     destinationAddress,
     amountBaseUnits,
@@ -843,7 +843,8 @@ export function useUmbra() {
     isAccountRegistered,
     isAcountRegistered: isAccountRegistered,
     isAccountFullyRegistered: isUmbraAccountFullyRegistered,
-    getPrivateUsdcBalance,
+    getPrivateTokenBalance,
+    getPrivateUsdcBalance: getPrivateTokenBalance,
     createReceiverClaimableUtxo,
     depositAmount: createReceiverClaimableUtxo,
     scanClaimableUtxos,
@@ -851,7 +852,7 @@ export function useUmbra() {
     claimReceiverClaimableUtxos,
     createSelfClaimableUtxoFromEncryptedBalance,
     claimSelfClaimableUtxosToPublicBalance,
-    withdrawPrivateUsdcToWallet,
+    withdrawPrivateTokenToWallet,
     reclaimStaleWithdrawalProofAccounts,
   };
 }

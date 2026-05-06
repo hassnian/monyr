@@ -27,6 +27,7 @@ import {
   type PaymentContext,
 } from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -219,7 +220,7 @@ export function CreateProductDialog({
             </DialogTitle>
             <DialogDescription className="max-w-[42ch] text-[13px] leading-relaxed text-muted-foreground">
               {phase === "done"
-                ? "Share the link. Buyers pay in USDC; the file unlocks on confirmation. Sales settle privately."
+                ? `Share the link. Buyers pay in ${solanaPaymentConfig.tokenSymbol}; the file unlocks on confirmation. Sales settle privately.`
                 : "Fixed-price digital good. Buyers pay, you ship — no email, no Stripe."}
             </DialogDescription>
           </div>
@@ -257,7 +258,7 @@ export function CreateProductDialog({
                 variant="visitor"
                 id="product-price"
                 label="Price"
-                hint="What buyers pay in USDC."
+                hint={`What buyers pay in ${solanaPaymentConfig.tokenSymbol}.`}
                 value={price}
                 onValueChange={setPrice}
               />
@@ -590,7 +591,7 @@ function PreviewCard({
             <AmountDisplay amount={price} size="lg" />
           ) : (
             <span className="font-mono tabular text-[18px] text-muted-foreground/40">
-              0.00 <span className="text-[10.5px] uppercase">USDC</span>
+              0.00 <span className="text-[10.5px]">{solanaPaymentConfig.tokenSymbol}</span>
             </span>
           )}
         </div>

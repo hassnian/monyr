@@ -33,7 +33,7 @@ type CommonProps = {
 
 type OwnerProps = CommonProps & {
   variant: "owner";
-  /** Available balance in human USDC. `null` = locked / loading / unknown. */
+  /** Available balance in human token units. `null` = locked / loading / unknown. */
   balance: number | null;
   isLoadingBalance?: boolean;
   /**
@@ -57,7 +57,7 @@ const SIZE_INPUT_CLASSES: Record<Size, string> = {
 };
 
 const SIZE_SUFFIX_CLASSES: Record<Size, string> = {
-  md: "text-[10.5px] uppercase tracking-wider text-muted-foreground/80",
+  md: "text-[10.5px] tracking-wider text-muted-foreground/80",
   lg: "text-sm tracking-wide text-muted-foreground",
 };
 
@@ -189,7 +189,7 @@ export function AmountInput(props: AmountInputProps) {
               SIZE_SUFFIX_CLASSES[size],
             )}
           >
-            USDC
+            {solanaPaymentConfig.tokenSymbol}
           </span>
         </div>
       </div>

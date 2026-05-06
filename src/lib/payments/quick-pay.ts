@@ -129,7 +129,7 @@ function getTransferCheckedInstruction({
   };
 }
 
-export async function sendQuickUsdcPayment({
+export async function sendQuickPayment({
   wallet,
   account,
   destinationOwner,
@@ -147,8 +147,8 @@ export async function sendQuickUsdcPayment({
   const rpc = createSolanaRpc(solanaPaymentConfig.rpcUrl);
   const payer = address(account.address);
   const recipient = address(destinationOwner);
-  const mint = solanaPaymentConfig.usdcMint;
-  const nativeUsdcAmount = nativeAmount(amount, paymentTokenDecimals);
+  const mint = solanaPaymentConfig.tokenMint;
+  const nativeTokenAmount = nativeAmount(amount, paymentTokenDecimals);
 
   const sourceAta = await findAta(payer, mint);
   const destinationAta = await findAta(recipient, mint);
@@ -176,7 +176,7 @@ export async function sendQuickUsdcPayment({
       destinationAta,
       owner: payer,
       mint,
-      amount: nativeUsdcAmount,
+      amount: nativeTokenAmount,
     }),
   );
 

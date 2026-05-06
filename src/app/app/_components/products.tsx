@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/app/contexts/auth-context";
 import { useInboxPayments } from "@/app/hooks/useInboxPayments";
 import { handleUrl } from "@/lib/brand";
+import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -567,7 +568,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </p>
       <p className="max-w-md text-[13px] text-muted-foreground/70">
         Sell a download or license at a fixed price. Share the link — buyers pay
-        in USDC and unlock the file.
+        in {solanaPaymentConfig.tokenSymbol} and unlock the file.
       </p>
       <button
         type="button"

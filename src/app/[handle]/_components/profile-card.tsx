@@ -66,9 +66,9 @@ export function ProfileCard({
   const isPayDisabled = !isInvoice && !canPay;
 
   const label = isInvoice
-    ? `Pay ${formatDecimalAmount(variant.amount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC`
+    ? `Pay ${formatDecimalAmount(variant.amount, { decimals: solanaPaymentConfig.tokenDecimals })} ${solanaPaymentConfig.tokenSymbol}`
     : canPay
-      ? `Pay ${formatDecimalAmount(numericAmount, { decimals: solanaPaymentConfig.tokenDecimals })} USDC`
+      ? `Pay ${formatDecimalAmount(numericAmount, { decimals: solanaPaymentConfig.tokenDecimals })} ${solanaPaymentConfig.tokenSymbol}`
       : "Enter an amount";
 
   const isUmbraActive = umbraStatus === "active";
@@ -316,7 +316,7 @@ function TipJarBlock({
         variant="visitor"
         id="amount"
         label="Amount"
-        hint="USDC · Solana"
+        hint={`${solanaPaymentConfig.tokenSymbol} · Solana`}
         size="lg"
         value={amount}
         onValueChange={setAmount}

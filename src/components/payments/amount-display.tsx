@@ -4,11 +4,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 type Props = {
-  /** Human/display amount, e.g. 0.001 USDC. Prefer amountBaseUnits when available. */
+  /** Human/display amount, e.g. 0.001 token units. Prefer amountBaseUnits when available. */
   amount: number | null;
-  /** Native/base units, e.g. 1000 for 0.001 USDC when decimals=6. */
+  /** Native/base units, e.g. 1000 for 0.001 token units when decimals=6. */
   amountBaseUnits?: bigint | string | number | null;
-  /** Native/base-unit decimals for this asset. USDC is 6. */
+  /** Native/base-unit decimals for this asset. */
   decimals?: number;
   currency?: string;
   /** Privacy-masked: render `••••` dots for an intentional hide. */
@@ -53,7 +53,7 @@ export function AmountDisplay({
   amount,
   amountBaseUnits,
   decimals,
-  currency = "USDC",
+  currency = solanaPaymentConfig.tokenSymbol,
   hidden = false,
   loading = false,
   className,
@@ -82,7 +82,7 @@ export function AmountDisplay({
         </span>
       )}
       <span
-        className="text-muted-foreground font-sans font-medium tracking-wide uppercase"
+        className="text-muted-foreground font-sans font-medium tracking-wide"
         style={{ fontSize: "0.55em" }}
       >
         {currency}

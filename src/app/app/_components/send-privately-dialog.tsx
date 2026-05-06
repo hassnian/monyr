@@ -144,7 +144,7 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
             solanaPaymentConfig.tokenDecimals,
           ).toString(),
           tokenDecimals: solanaPaymentConfig.tokenDecimals,
-          mint: solanaPaymentConfig.usdcMint,
+          mint: solanaPaymentConfig.tokenMint,
           handle: target.handle,
           memo: memo.trim() || undefined,
           utxoCreateSignature,
@@ -558,7 +558,7 @@ function PreviewCard({
             <AmountDisplay amount={amount} size="lg" />
           ) : (
             <span className="font-mono tabular text-[20px] text-muted-foreground/40">
-              0.00 <span className="text-[11px] uppercase">USDC</span>
+              0.00 <span className="text-[11px]">{solanaPaymentConfig.tokenSymbol}</span>
             </span>
           )}
         </div>

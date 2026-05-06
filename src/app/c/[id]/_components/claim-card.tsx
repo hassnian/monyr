@@ -107,8 +107,8 @@ export function ClaimCard({ link }: { link: ClaimableLink }) {
                 .{decimal}
               </span>
             </h1>
-            <p className="mt-3 font-mono tabular text-[10.5px] uppercase tracking-[0.24em] text-muted-foreground/70">
-              USDC · Solana
+            <p className="mt-3 font-mono tabular text-[10.5px] tracking-[0.24em] text-muted-foreground/70">
+              {solanaPaymentConfig.tokenSymbol} · Solana
             </p>
           </div>
 

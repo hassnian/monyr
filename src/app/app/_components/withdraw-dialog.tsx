@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Decrypted private balance in human USDC. `null` while loading or locked. */
+  /** Decrypted private balance in human token units. `null` while loading or locked. */
   availableBalance: number | null;
   /** Connected wallet address — withdrawal destination. Read-only here. */
   walletAddress: string | null;
@@ -73,8 +73,8 @@ const CLAIM_RELAYER_FEE_SLAB = {
 } satisfies FeeSlab;
 const TOKEN_DECIMALS = solanaPaymentConfig.tokenDecimals;
 const ONE_TOKEN_BASE_UNITS = 10n ** BigInt(TOKEN_DECIMALS);
-const PRIVATE_WITHDRAWAL_RESERVE_BASE_UNITS = ONE_TOKEN_BASE_UNITS / 100n; // 0.01 USDC
-const MIN_PRIVATE_WITHDRAWAL_BASE_UNITS = (ONE_TOKEN_BASE_UNITS * 5n) / 100n; // 0.05 USDC
+const PRIVATE_WITHDRAWAL_RESERVE_BASE_UNITS = ONE_TOKEN_BASE_UNITS / 100n; // 0.01 token units
+const MIN_PRIVATE_WITHDRAWAL_BASE_UNITS = (ONE_TOKEN_BASE_UNITS * 5n) / 100n; // 0.05 token units
 
 function parseDecimalBaseUnits(value: string, decimals: number) {
   const trimmed = value.trim();
@@ -170,7 +170,7 @@ export function WithdrawDialog({
   const [amount, setAmount] = useState("");
   const [withdrawSignature, setWithdrawSignature] = useState<string | null>(null);
   const { unlockedVault } = useAuth();
-  const { withdrawPrivateUsdcToWallet } = useUmbra();
+  const { withdrawPrivateTokenToWallet } = useUmbra();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -227,7 +227,7 @@ export function WithdrawDialog({
   const belowMinimum =
     amountBaseUnits !== null && amountBaseUnits < MIN_PRIVATE_WITHDRAWAL_BASE_UNITS;
   const validationMessage = belowMinimum
-    ? `Minimum private withdrawal is ${formatBaseUnitsForUi(MIN_PRIVATE_WITHDRAWAL_BASE_UNITS)} USDC.`
+    ? `Minimum private withdrawal is ${formatBaseUnitsForUi(MIN_PRIVATE_WITHDRAWAL_BASE_UNITS)} ${solanaPaymentConfig.tokenSymbol}.`
     : overBalance
       ? "Amount exceeds your available private balance."
       : belowFees
@@ -260,7 +260,7 @@ export function WithdrawDialog({
         console.warn("[Withdraw] Could not top up vault SOL; retrying with current vault balance", fundingError);
       }
 
-      const result = await withdrawPrivateUsdcToWallet({
+      const result = await withdrawPrivateTokenToWallet({
         signer,
         destinationAddress: walletAddress,
         amountBaseUnits,
@@ -392,7 +392,7 @@ export function WithdrawDialog({
               </Button>
 
               <p className="text-center text-[11.5px] leading-snug text-muted-foreground/70">
-                Private exit via self-claimable UTXO. Minimum withdrawal is {formatBaseUnitsForUi(MIN_PRIVATE_WITHDRAWAL_BASE_UNITS)} USDC.
+                Private exit via self-claimable UTXO. Minimum withdrawal is {formatBaseUnitsForUi(MIN_PRIVATE_WITHDRAWAL_BASE_UNITS)} {solanaPaymentConfig.tokenSymbol}.
               </p>
             </form>
           )}
@@ -440,8 +440,8 @@ function Summary({
         {showAmount ? (
           <span className="font-mono tabular text-[12.5px] text-foreground/85">
             {formatBaseUnitsForUi(estimateWithdrawalDebitBaseUnits(amountBaseUnits ?? 0n))}{" "}
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-              USDC
+            <span className="text-[10px] tracking-wider text-muted-foreground/70">
+              {solanaPaymentConfig.tokenSymbol}
             </span>
           </span>
         ) : (
@@ -455,8 +455,8 @@ function Summary({
         {showAmount ? (
           <span className="font-mono tabular text-[12.5px] text-foreground/85">
             {formatBaseUnitsForUi(estimate.totalFeeBaseUnits)}{" "}
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-              USDC
+            <span className="text-[10px] tracking-wider text-muted-foreground/70">
+              {solanaPaymentConfig.tokenSymbol}
             </span>
           </span>
         ) : (
@@ -474,7 +474,7 @@ function Summary({
           <AmountDisplay amount={toHumanAmount(estimate.receiveBaseUnits)} size="lg" />
         ) : (
           <span className="font-mono tabular text-[20px] text-muted-foreground/40">
-            0.00 <span className="text-[11px] uppercase">USDC</span>
+            0.00 <span className="text-[11px]">{solanaPaymentConfig.tokenSymbol}</span>
           </span>
         )}
       </div>

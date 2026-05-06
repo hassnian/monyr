@@ -2,7 +2,7 @@ const DEFAULT_DISPLAY_FRACTION_DIGITS = 2;
 const DEFAULT_SMALL_AMOUNT_MAX_FRACTION_DIGITS = 4;
 
 export type FormatAmountOptions = {
-  /** Native/base-unit decimals for the asset. USDC is 6. */
+  /** Native/base-unit decimals for the asset. */
   decimals: number;
   /** Fraction digits used for normal amounts. */
   fractionDigits?: number;
