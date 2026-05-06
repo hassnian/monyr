@@ -29,7 +29,7 @@ import { fundVaultForUtxoCreation } from "@/app/actions/vault";
 import { useAuth } from "@/app/contexts/auth-context";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { formatBaseUnitsAmount, nativeAmount } from "@/lib/payments/amount";
-import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { solanaPaymentConfig, solscanUrl } from "@/lib/payments/solana-config";
 import { sweepWithdrawalSetupSol } from "@/lib/vault/sweep";
 import { cn } from "@/lib/utils";
 
@@ -537,7 +537,7 @@ function DonePanel({
         </div>
 
         <a
-          href={signature ? `https://solscan.io/tx/${signature}` : "https://solscan.io"}
+          href={signature ? solscanUrl(`/tx/${signature}`) : solscanUrl("/")}
           target="_blank"
           rel="noreferrer"
           className={cn(

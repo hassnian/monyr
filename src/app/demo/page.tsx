@@ -16,6 +16,7 @@ import { LandingFooter } from "../_components/landing/landing-footer";
 import { SectionDivider } from "../_components/landing/section-frame";
 import { cn } from "@/lib/utils";
 import { handleUrl } from "@/lib/brand";
+import { solscanUrl } from "@/lib/payments/solana-config";
 
 export const metadata = {
   title: "Demo — Try the @alice payment flow on Monyr",
@@ -27,8 +28,9 @@ const DEMO_HANDLE = "alice";
 const PROFILE_PATH = `/@${DEMO_HANDLE}`;
 const DASHBOARD_PATH = "/app";
 const PRIVACY_PATH = "/privacy-model";
-const UMBRA_PROGRAM_EXPLORER =
-  "https://solscan.io/account/UMBRAD2ishebJTcgCLkTkNUx1v3GyoAgpTRPeWoLykh";
+const UMBRA_PROGRAM_EXPLORER = solscanUrl(
+  "/account/UMBRAD2ishebJTcgCLkTkNUx1v3GyoAgpTRPeWoLykh",
+);
 
 type Step = {
   n: string;

@@ -4,21 +4,14 @@ import { useState } from "react";
 import { Check, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { solscanUrl } from "@/lib/payments/solana-config";
 
 type Props = {
   vaultPubkey: string;
 };
 
 function explorerUrlForAddress(address: string) {
-  const cluster = solanaPaymentConfig.chain;
-  const isMainnet =
-    cluster === "solana:mainnet" || cluster === "solana:mainnet-beta";
-  const base = `https://solscan.io/account/${address}`;
-  if (isMainnet) return base;
-  if (cluster === "solana:devnet") return `${base}?cluster=devnet`;
-  if (cluster === "solana:testnet") return `${base}?cluster=testnet`;
-  return base;
+  return solscanUrl(`/account/${address}`);
 }
 
 /**

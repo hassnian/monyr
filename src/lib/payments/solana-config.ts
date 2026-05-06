@@ -77,3 +77,18 @@ export const solanaPaymentConfig: SolanaPaymentConfig = {
   usdcMint: address(process.env.NEXT_PUBLIC_USDC_MINT ?? defaultUsdcMint(chain)),
   tokenDecimals: tokenDecimals(),
 };
+
+export function solscanUrl(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(normalizedPath, "https://solscan.io");
+
+  if (solanaPaymentConfig.chain === "solana:devnet") {
+    url.searchParams.set("cluster", "devnet");
+  }
+
+  if (solanaPaymentConfig.chain === "solana:testnet") {
+    url.searchParams.set("cluster", "testnet");
+  }
+
+  return url.toString();
+}

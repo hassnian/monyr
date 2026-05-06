@@ -20,7 +20,7 @@ import { sendQuickUsdcPayment } from "@/lib/payments/quick-pay";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
 import { markInvoicePaymentContextPaid } from "@/app/actions/payment-contexts";
 import { formatDecimalAmount, nativeAmount } from "@/lib/payments/amount";
-import { solanaPaymentConfig } from "@/lib/payments/solana-config";
+import { solanaPaymentConfig, solscanUrl } from "@/lib/payments/solana-config";
 import { encryptReceiptPayload } from "@/lib/receipts/crypto";
 import UmbraRegister from "@/app/components/claim/UmbraRegister";
 import type { ProfileIdentity } from "./profile.types";
@@ -687,7 +687,7 @@ function SuccessStep({
           </div>
           {receiptSignature && (
             <a
-              href={`https://solscan.io/tx/${receiptSignature}`}
+              href={solscanUrl(`/tx/${receiptSignature}`)}
               target="_blank"
               rel="noreferrer"
               className="shrink-0 text-xs font-medium text-primary underline-offset-4 hover:underline"
