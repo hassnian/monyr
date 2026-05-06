@@ -1,11 +1,8 @@
-import {
-  deriveProofAccountOffsetFromModifiedGenerationIndex,
-} from "@umbra-privacy/sdk";
 import type { IUmbraClient, IUmbraSigner } from "@umbra-privacy/sdk/interfaces";
 import type { U256 } from "@umbra-privacy/sdk/types";
 import {
-  getAccountOffsetEncoder,
   getCloseStealthPoolDepositInputBufferInstructionAsync,
+  getCreateStealthPoolDepositInputBufferInstructionDataDecoder,
 } from "@umbra-privacy/umbra-codama";
 import {
   address as toAddress,
@@ -13,33 +10,43 @@ import {
   compileTransaction,
   createNoopSigner,
   createTransactionMessage,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   getSignatureFromTransaction,
   pipe,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { kmac256 } from "@noble/hashes/sha3-addons.js";
+import bs58 from "bs58";
 
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 
-export const MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS = 5_000_000n;
+export const MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS = 25_000_000n;
 
-const WITHDRAWAL_GENERATION_LIST_KEY = "hush:umbra-withdraw-generations";
-const DOMAIN_MODIFIED_GEN_INDEX =
-  "EncryptedBalanceToSelfClaimableUtxoCreatorFunction / modifiedGenerationIndex";
-const STEALTH_POOL_DEPOSIT_INPUT_BUFFER_SEED = sha256(
-  new TextEncoder().encode("StealthPoolDepositInputBuffer"),
-);
+const HISTORY_SCAN_PAGE_SIZE = 100;
+const HISTORY_SCAN_MAX_SIGNATURES = 1_000;
 
-type StoredWithdrawalGeneration = {
-  storageKey: string;
-  signerAddress: string;
-  destinationAddress: string;
-  amountBaseUnits: string;
-  generationIndex: string;
+type RpcInstruction = {
+  accounts?: unknown;
+  data?: unknown;
+  programIdIndex?: unknown;
+};
+
+type RpcTransaction = {
+  transaction?: {
+    message?: {
+      accountKeys?: unknown;
+      instructions?: unknown;
+    };
+  };
+};
+
+type RpcSignatureInfo = {
+  signature?: unknown;
+};
+
+type StaleProofCandidate = {
+  address: string;
+  offset: bigint;
+  createSignature: string;
 };
 
 export type UmbraStaleProofReclaim = {
@@ -48,58 +55,7 @@ export type UmbraStaleProofReclaim = {
   signature: string;
 };
 
-export function getWithdrawalGenerationStorageKey({
-  signerAddress,
-  destinationAddress,
-  amountBaseUnits,
-}: {
-  signerAddress: string;
-  destinationAddress: string;
-  amountBaseUnits: bigint;
-}) {
-  return `hush:umbra-withdraw-generation:${signerAddress}:${destinationAddress}:${amountBaseUnits.toString()}`;
-}
-
-function readStoredWithdrawalGenerations() {
-  if (typeof window === "undefined") return [] as StoredWithdrawalGeneration[];
-
-  try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(WITHDRAWAL_GENERATION_LIST_KEY) ?? "[]",
-    ) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is StoredWithdrawalGeneration =>
-        item !== null &&
-        typeof item === "object" &&
-        typeof (item as StoredWithdrawalGeneration).storageKey === "string" &&
-        typeof (item as StoredWithdrawalGeneration).signerAddress === "string" &&
-        typeof (item as StoredWithdrawalGeneration).destinationAddress === "string" &&
-        typeof (item as StoredWithdrawalGeneration).amountBaseUnits === "string" &&
-        typeof (item as StoredWithdrawalGeneration).generationIndex === "string",
-    );
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredWithdrawalGenerations(records: StoredWithdrawalGeneration[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(
-    WITHDRAWAL_GENERATION_LIST_KEY,
-    JSON.stringify(records),
-  );
-}
-
-function rememberWithdrawalGeneration(record: StoredWithdrawalGeneration) {
-  const records = readStoredWithdrawalGenerations().filter(
-    (item) => item.storageKey !== record.storageKey,
-  );
-  records.push(record);
-  writeStoredWithdrawalGenerations(records);
-}
-
-function generateU256() {
+export function generateWithdrawalGenerationIndex() {
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
   let value = 0n;
@@ -109,85 +65,138 @@ function generateU256() {
   return value as U256;
 }
 
-export function hasPendingWithdrawalGeneration(storageKey: string) {
-  return (
-    typeof window !== "undefined" &&
-    window.localStorage.getItem(storageKey) !== null
-  );
-}
-
-export function getOrCreateWithdrawalGenerationIndex({
-  storageKey,
-  signerAddress,
-  destinationAddress,
-  amountBaseUnits,
-}: {
-  storageKey: string;
-  signerAddress: string;
-  destinationAddress: string;
-  amountBaseUnits: bigint;
-}) {
-  if (typeof window === "undefined") return generateU256();
-
-  const stored = window.localStorage.getItem(storageKey);
-  if (stored) return BigInt(stored) as U256;
-
-  const generationIndex = generateU256();
-  window.localStorage.setItem(storageKey, generationIndex.toString());
-  rememberWithdrawalGeneration({
-    storageKey,
-    signerAddress,
-    destinationAddress,
-    amountBaseUnits: amountBaseUnits.toString(),
-    generationIndex: generationIndex.toString(),
+async function rpcRequest<T>(method: string, params: unknown[]): Promise<T> {
+  const response = await fetch(solanaPaymentConfig.rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: `hush-${method}`,
+      method,
+      params,
+    }),
   });
-  return generationIndex;
-}
+  const payload = (await response.json()) as { result?: T; error?: unknown };
 
-export function clearWithdrawalGenerationIndex(storageKey: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(storageKey);
-  writeStoredWithdrawalGenerations(
-    readStoredWithdrawalGenerations().filter((item) => item.storageKey !== storageKey),
-  );
-}
-
-async function deriveWithdrawalProofAccount({
-  client,
-  signerAddress,
-  generationIndex,
-}: {
-  client: IUmbraClient;
-  signerAddress: string;
-  generationIndex: bigint;
-}) {
-  const masterSeed = await client.masterSeed.getMasterSeed();
-  const modifiedGenerationIndex = kmac256(
-    new TextEncoder().encode(DOMAIN_MODIFIED_GEN_INDEX),
-    masterSeed,
-    {
-      dkLen: 16,
-      personalization: new TextEncoder().encode(generationIndex.toString()),
-    },
-  );
-  const proofAccountOffsetBytes = deriveProofAccountOffsetFromModifiedGenerationIndex(
-    modifiedGenerationIndex,
-  );
-  let proofAccountOffset = 0n;
-  for (let index = 0; index < 16; index++) {
-    proofAccountOffset |= BigInt(proofAccountOffsetBytes[index] ?? 0) << BigInt(index * 8);
+  if (payload.error || !("result" in payload)) {
+    throw new Error(`RPC ${method} failed`);
   }
 
-  const [proofAccountAddress] = await getProgramDerivedAddress({
-    programAddress: client.networkConfig.programId,
-    seeds: [
-      STEALTH_POOL_DEPOSIT_INPUT_BUFFER_SEED,
-      getAddressEncoder().encode(toAddress(signerAddress)),
-      getAccountOffsetEncoder().encode({ first: proofAccountOffset }),
-    ],
-  });
+  return payload.result as T;
+}
 
-  return { proofAccountAddress, proofAccountOffset };
+function normalizeAccountKey(key: unknown) {
+  if (typeof key === "string") return key;
+  if (key && typeof key === "object" && "pubkey" in key) {
+    const pubkey = (key as { pubkey?: unknown }).pubkey;
+    if (typeof pubkey === "string") return pubkey;
+  }
+  return null;
+}
+
+async function getRecentVaultSignatures(signerAddress: string) {
+  const signatures: string[] = [];
+  let before: string | undefined;
+
+  while (signatures.length < HISTORY_SCAN_MAX_SIGNATURES) {
+    const page = await rpcRequest<RpcSignatureInfo[]>("getSignaturesForAddress", [
+      signerAddress,
+      {
+        limit: Math.min(
+          HISTORY_SCAN_PAGE_SIZE,
+          HISTORY_SCAN_MAX_SIGNATURES - signatures.length,
+        ),
+        ...(before ? { before } : {}),
+      },
+    ]);
+
+    const pageSignatures = page
+      .map((item) => item.signature)
+      .filter((signature): signature is string => typeof signature === "string");
+
+    signatures.push(...pageSignatures);
+    if (pageSignatures.length < HISTORY_SCAN_PAGE_SIZE) break;
+    before = pageSignatures.at(-1);
+  }
+
+  return signatures;
+}
+
+async function getTransaction(signature: string) {
+  return rpcRequest<RpcTransaction | null>("getTransaction", [
+    signature,
+    {
+      encoding: "json",
+      maxSupportedTransactionVersion: 0,
+      commitment: "confirmed",
+    },
+  ]);
+}
+
+async function discoverStaleProofCandidatesFromHistory({
+  signerAddress,
+  programId,
+}: {
+  signerAddress: string;
+  programId: string;
+}) {
+  const candidates = new Map<string, StaleProofCandidate>();
+  const signatures = await getRecentVaultSignatures(signerAddress);
+  const decoder = getCreateStealthPoolDepositInputBufferInstructionDataDecoder();
+
+  for (const signature of signatures) {
+    let transaction: RpcTransaction | null;
+    try {
+      transaction = await getTransaction(signature);
+    } catch {
+      continue;
+    }
+
+    const message = transaction?.transaction?.message;
+    if (!message || !Array.isArray(message.accountKeys) || !Array.isArray(message.instructions)) {
+      continue;
+    }
+
+    const accountKeys = message.accountKeys.map(normalizeAccountKey);
+
+    for (const instruction of message.instructions as RpcInstruction[]) {
+      if (
+        !Array.isArray(instruction.accounts) ||
+        typeof instruction.data !== "string" ||
+        typeof instruction.programIdIndex !== "number"
+      ) {
+        continue;
+      }
+
+      const instructionProgramId = accountKeys[instruction.programIdIndex];
+      if (instructionProgramId !== programId) continue;
+
+      let decoded: ReturnType<typeof decoder.decode>;
+      try {
+        decoded = decoder.decode(bs58.decode(instruction.data));
+      } catch {
+        continue;
+      }
+
+      const depositorIndex = instruction.accounts[0];
+      const proofAccountIndex = instruction.accounts[2];
+      if (typeof depositorIndex !== "number" || typeof proofAccountIndex !== "number") {
+        continue;
+      }
+
+      const depositor = accountKeys[depositorIndex];
+      const proofAccount = accountKeys[proofAccountIndex];
+      if (depositor !== signerAddress || !proofAccount) continue;
+
+      candidates.set(proofAccount, {
+        address: proofAccount,
+        offset: decoded.offset.first,
+        createSignature: signature,
+      });
+    }
+  }
+
+  return [...candidates.values()];
 }
 
 export async function reclaimStaleUmbraWithdrawalProofAccounts({
@@ -198,32 +207,28 @@ export async function reclaimStaleUmbraWithdrawalProofAccounts({
   client: IUmbraClient;
 }) {
   const reclaimed: UmbraStaleProofReclaim[] = [];
-  const pendingGenerations = readStoredWithdrawalGenerations().filter(
-    (record) => record.signerAddress === signer.address,
+  const candidates = await discoverStaleProofCandidatesFromHistory({
+    signerAddress: signer.address,
+    programId: client.networkConfig.programId,
+  });
+
+  if (candidates.length === 0) {
+    return reclaimed;
+  }
+
+  const accountMap = await client.accountInfoProvider(
+    candidates.map((candidate) => toAddress(candidate.address)),
+    { commitment: "confirmed" },
   );
 
-  for (const pendingGeneration of pendingGenerations) {
-    const { proofAccountAddress, proofAccountOffset } =
-      await deriveWithdrawalProofAccount({
-        client,
-        signerAddress: signer.address,
-        generationIndex: BigInt(pendingGeneration.generationIndex),
-      });
-    const accountMap = await client.accountInfoProvider([proofAccountAddress], {
-      commitment: "confirmed",
-    });
-    const accountInfo = accountMap.get(proofAccountAddress);
-
-    if (accountInfo?.exists !== true) {
-      continue;
-    }
+  for (const candidate of candidates) {
+    const accountInfo = accountMap.get(toAddress(candidate.address));
+    if (accountInfo?.exists !== true) continue;
 
     console.info("[Umbra] Reclaiming stale proof account", {
-      account: proofAccountAddress,
-      offset: proofAccountOffset.toString(),
-      amountBaseUnits: pendingGeneration.amountBaseUnits,
-      destinationAddress: pendingGeneration.destinationAddress,
-      generationIndex: pendingGeneration.generationIndex,
+      account: candidate.address,
+      offset: candidate.offset.toString(),
+      createSignature: candidate.createSignature,
       lamports: accountInfo.lamports?.toString(),
     });
 
@@ -231,7 +236,7 @@ export async function reclaimStaleUmbraWithdrawalProofAccounts({
       await getCloseStealthPoolDepositInputBufferInstructionAsync(
         {
           depositor: createNoopSigner(signer.address),
-          offset: { first: proofAccountOffset },
+          offset: { first: candidate.offset },
         },
         { programAddress: client.networkConfig.programId },
       );
@@ -249,11 +254,10 @@ export async function reclaimStaleUmbraWithdrawalProofAccounts({
 
     await client.transactionForwarder.forwardSequentially([signed]);
     reclaimed.push({
-      address: proofAccountAddress,
-      offset: proofAccountOffset.toString(),
+      address: candidate.address,
+      offset: candidate.offset.toString(),
       signature,
     });
-    clearWithdrawalGenerationIndex(pendingGeneration.storageKey);
   }
 
   if (reclaimed.length > 0) {

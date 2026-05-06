@@ -40,11 +40,8 @@ import { nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { U32, U64 } from "@umbra-privacy/sdk/types";
 import {
-  clearWithdrawalGenerationIndex,
-  getOrCreateWithdrawalGenerationIndex,
+  generateWithdrawalGenerationIndex,
   getSolBalanceLamports,
-  getWithdrawalGenerationStorageKey,
-  hasPendingWithdrawalGeneration,
   MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS,
   reclaimStaleUmbraWithdrawalProofAccounts,
   serializeErrorForLog,
@@ -596,19 +593,7 @@ export function useUmbra() {
       },
     );
 
-    const generationStorageKey = getWithdrawalGenerationStorageKey({
-      signerAddress: signer.address,
-      destinationAddress,
-      amountBaseUnits,
-    });
-    const hadPendingGeneration =
-      hasPendingWithdrawalGeneration(generationStorageKey);
-    const generationIndex = getOrCreateWithdrawalGenerationIndex({
-      storageKey: generationStorageKey,
-      signerAddress: signer.address,
-      destinationAddress,
-      amountBaseUnits,
-    });
+    const generationIndex = generateWithdrawalGenerationIndex();
     const vaultSolBalance = await getSolBalanceLamports(signer.address);
     console.info("[Umbra] Creating self-claimable UTXO from encrypted balance", {
       network: UMBRA_CLIENT_CONFIG.network,
@@ -617,7 +602,6 @@ export function useUmbra() {
       amountBaseUnits: amountBaseUnits.toString(),
       vaultSolBalanceLamports: vaultSolBalance.toString(),
       generationIndex: generationIndex.toString(),
-      retryingPendingGeneration: hadPendingGeneration,
     });
 
     if (vaultSolBalance < MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS) {
@@ -636,7 +620,6 @@ export function useUmbra() {
         { generationIndex },
       );
 
-      clearWithdrawalGenerationIndex(generationStorageKey);
       console.info("[Umbra] Self-claimable UTXO creation completed", result);
       return result;
     } catch (error) {
@@ -648,7 +631,6 @@ export function useUmbra() {
         amountBaseUnits: amountBaseUnits.toString(),
         vaultSolBalanceLamports: vaultSolBalance.toString(),
         generationIndex: generationIndex.toString(),
-        retryingPendingGeneration: hadPendingGeneration,
         serializedError,
         error,
       });
