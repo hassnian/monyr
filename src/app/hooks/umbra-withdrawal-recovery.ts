@@ -22,6 +22,9 @@ import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 export const MIN_VAULT_SOL_FOR_UTXO_RETRY_LAMPORTS = 25_000_000n;
 
 const HISTORY_SCAN_PAGE_SIZE = 100;
+// Bounded history search for stale proof accounts. The stale rent is recoverable
+// from the create-proof transaction itself, so this intentionally avoids local
+// storage state that can be lost across browsers/sessions.
 const HISTORY_SCAN_MAX_SIGNATURES = 1_000;
 
 type RpcInstruction = {
@@ -144,6 +147,11 @@ async function discoverStaleProofCandidatesFromHistory({
   const signatures = await getRecentVaultSignatures(signerAddress);
   const decoder = getCreateStealthPoolDepositInputBufferInstructionDataDecoder();
 
+  // `CreateStealthPoolDepositInputBuffer` includes both pieces needed to close
+  // the account later: account[2] is the proof PDA, and instruction data carries
+  // the U128 offset. If a later close/queue succeeded, the account existence
+  // check below filters it out; this scan only produces candidates.
+
   for (const signature of signatures) {
     let transaction: RpcTransaction | null;
     try {
@@ -220,6 +228,9 @@ export async function reclaimStaleUmbraWithdrawalProofAccounts({
     candidates.map((candidate) => toAddress(candidate.address)),
     { commitment: "confirmed" },
   );
+
+  // Only close accounts that still exist. Successfully completed or already
+  // reclaimed attempts show up in history too, but their proof accounts are gone.
 
   for (const candidate of candidates) {
     const accountInfo = accountMap.get(toAddress(candidate.address));

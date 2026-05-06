@@ -552,25 +552,18 @@ export function useUmbra() {
   /**
    * Private withdrawal setup: encrypted balance -> self-claimable UTXO.
    *
-   * Current mainnet status / investigation notes:
-   * - Vault SOL funding and USDC amount are not the current blocker. We reproduced failures with
-   *   ~0.015 SOL available and >= 1 USDC private balance.
-   * - The SDK successfully reaches the create flow, then fails during transaction send/preflight
-   *   at Umbra's `DepositIntoStealthPoolFromSharedBalanceV11` queue instruction.
-   * - Observed error: `CreateUtxoError` stage `transaction-send`, `Custom program error: #1`
-   *   on instruction #2.
-   * - This appears to be an Umbra/Arcium mainnet queue/precondition issue, not a Hush fee-math
-   *   or dust-amount issue.
-   * - Failed attempts can create stale proof/input-buffer accounts. We persist the generation
-   *   index locally, derive the proof account dynamically, and reclaim rent in the catch block.
+   * Umbra's encrypted-balance UTXO creator is a multi-transaction Arcium flow:
+   * create a `StealthPoolDepositInputBuffer` proof account, then queue
+   * `DepositIntoStealthPoolFromSharedBalanceV11`, whose callback inserts the UTXO
+   * and debits the ETA. The proof account rent is paid up front; if the queue tx
+   * fails, that account can remain on-chain until explicitly closed.
    *
-   * Next steps:
-   * - Do not keep blindly retrying this private UTXO path in production.
-   * - Keep automatic stale-rent reclaim on failure.
-   * - Add/ship a direct encrypted-balance -> public-wallet withdrawal fallback with clear privacy
-   *   warning: it is cheaper/faster but may link the vault withdrawal to the destination wallet.
-   * - Re-enable this private UTXO path only after Umbra/Arcium confirms/fixes the mainnet
-   *   `DepositIntoStealthPoolFromSharedBalanceV11` custom error #1 failure.
+   * Practical finding from devnet debugging: ~0.015 SOL was enough to create the
+   * proof account but not enough to reliably queue the Arcium computation. That
+   * failure surfaced as `CreateUtxoError` / `transaction-send` / custom error #1
+   * and left reclaimable proof-account rent behind. Keep the preflight SOL floor
+   * conservative, reclaim stale proof accounts before/after attempts, and avoid
+   * retrying this path when the vault is underfunded.
    */
   async function createSelfClaimableUtxoFromEncryptedBalance({
     signer: providedSigner,
@@ -593,6 +586,9 @@ export function useUmbra() {
       },
     );
 
+    // The generation index is not needed for reclaim anymore; stale proof
+    // accounts are rediscovered from on-chain create-proof transactions. Keep it
+    // fresh per attempt so a failed queue tx cannot collide with the next proof.
     const generationIndex = generateWithdrawalGenerationIndex();
     const vaultSolBalance = await getSolBalanceLamports(signer.address);
     console.info("[Umbra] Creating self-claimable UTXO from encrypted balance", {
@@ -716,6 +712,9 @@ export function useUmbra() {
     amountBaseUnits: bigint;
   }) {
     const signer = providedSigner ?? getConnectedSigner();
+    // Snapshot before creation so the post-create indexer scan only claims the
+    // UTXO produced by this withdrawal, not older self-burnable UTXOs that may
+    // still be waiting in the user's recent scan window.
     const before = await scanRecentClaimableUtxos({ signer });
     const beforeIds = new Set(before.selfBurnable.map(getUmbraUtxoId));
 
