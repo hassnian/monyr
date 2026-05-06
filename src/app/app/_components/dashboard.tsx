@@ -10,9 +10,16 @@ import { Inbox } from "./inbox";
 import { Outbox } from "./outbox";
 import { InvoicesPane } from "./invoices";
 import { LabelsPane } from "./labels";
+import { ProductsPane } from "./products";
 import { ReceiptsPanel } from "./receipts";
 
-type TabValue = "inbox" | "outbox" | "invoices" | "labels" | "receipts";
+type TabValue =
+  | "inbox"
+  | "outbox"
+  | "invoices"
+  | "products"
+  | "labels"
+  | "receipts";
 
 /**
  * Tabbed surface rolling the main workstreams together. Tabs render inline
@@ -36,6 +43,7 @@ export function DashboardTabs() {
     { value: "inbox", label: "Inbox", count: inboxCount },
     { value: "outbox", label: "Outbox", count: null },
     { value: "invoices", label: "Invoices", count: null },
+    { value: "products", label: "Products", count: null },
     { value: "labels", label: "Labels", count: null },
     { value: "receipts", label: "Receipts", count: null },
   ] as const;
@@ -102,6 +110,7 @@ export function DashboardTabs() {
         {active === "inbox" && <Inbox onCountChange={setInboxCount} />}
         {active === "outbox" && <Outbox />}
         {active === "invoices" && <InvoicesPane />}
+        {active === "products" && <ProductsPane />}
         {active === "labels" && <LabelsPane />}
         {active === "receipts" && <ReceiptsPanel />}
       </div>

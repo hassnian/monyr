@@ -22,7 +22,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
-import { createProductPaymentContext } from "@/app/actions/payment-contexts";
+import {
+  createProductPaymentContext,
+  type PaymentContext,
+} from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +33,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   handle: string;
+  onCreated?: (context: PaymentContext) => void;
 };
 
 type Phase = "form" | "creating" | "done";
@@ -90,7 +94,12 @@ function coverGradient(fromHue: number, toHue: number) {
   return `linear-gradient(${angle}deg, ${from} 0%, ${to} 100%)`;
 }
 
-export function CreateProductDialog({ open, onOpenChange, handle }: Props) {
+export function CreateProductDialog({
+  open,
+  onOpenChange,
+  handle,
+  onCreated,
+}: Props) {
   const [phase, setPhase] = useState<Phase>("form");
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -144,7 +153,7 @@ export function CreateProductDialog({ open, onOpenChange, handle }: Props) {
     setPhase("creating");
 
     try {
-      await createProductPaymentContext({
+      const context = await createProductPaymentContext({
         handle,
         slug,
         title: title.trim(),
@@ -155,6 +164,7 @@ export function CreateProductDialog({ open, onOpenChange, handle }: Props) {
         productKind: "download",
         cover: { ...cover, glyph },
       });
+      onCreated?.(context);
       setPhase("done");
     } catch (error) {
       console.error("Failed to publish product", error);
