@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
 import {
   AtSign,
   Check,
@@ -32,6 +33,8 @@ import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
 import { getHandle } from "@/app/actions/handles";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
+import { fundVaultForUtxoCreation } from "@/app/actions/vault";
+import { useAuth } from "@/app/contexts/auth-context";
 import { usePrivateBalance } from "@/app/hooks/usePrivateBalance";
 import { useUmbra } from "@/app/hooks/useUmbra";
 import { appUrl } from "@/lib/brand";
@@ -91,20 +94,25 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [amount]);
 
-  const { createReceiverClaimableUtxo } = useUmbra();
-  const { balance: privateBalance, isLoading: isLoadingBalance } =
-    usePrivateBalance();
+  const { unlockedVault } = useAuth();
+  const { createPrivateReceiverClaimableUtxo } = useUmbra();
+  const {
+    balance: privateBalance,
+    isLoading: isLoadingBalance,
+    refetch: refetchPrivateBalance,
+  } = usePrivateBalance();
   const overBalance =
-    mode === "link" &&
     numericAmount !== null &&
     privateBalance !== null &&
     numericAmount > privateBalance;
+  const balanceReady = privateBalance !== null && !isLoadingBalance;
 
   const recipientValid = mode === "handle" ? isValidHandle(recipient) : true;
   const ackOk = mode === "link" ? acknowledged : true;
   const canSubmit =
     phase === "form" &&
     numericAmount !== null &&
+    balanceReady &&
     !overBalance &&
     recipientValid &&
     ackOk;
@@ -117,9 +125,15 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     setError(null);
     setPhase("sending");
 
+    if (!unlockedVault) {
+      setError("Unlock your private vault before sending.");
+      setPhase("form");
+      return;
+    }
+
     if (mode === "link") {
-      await new Promise((r) => setTimeout(r, 1100));
-      setPhase("done");
+      setError("Claimable links are not available yet.");
+      setPhase("form");
       return;
     }
 
@@ -128,8 +142,21 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     try {
       const target = await getHandle(targetHandle);
       if (!target) throw new Error("Handle not found");
+      if (target.umbraStatus !== "active") {
+        throw new Error("Recipient has not activated private payments yet");
+      }
 
-      const result = await createReceiverClaimableUtxo({
+      try {
+        await fundVaultForUtxoCreation(unlockedVault.vaultPubkey);
+      } catch (fundingError) {
+        console.warn(
+          "[SendPrivately] Could not top up vault SOL; retrying with current vault balance",
+          fundingError,
+        );
+      }
+
+      const result = await createPrivateReceiverClaimableUtxo({
+        signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
         amount: numericAmount,
         address: target.vaultPubkey,
       });
@@ -160,6 +187,7 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
         console.error("Failed to save payment metadata", error);
       });
 
+      void refetchPrivateBalance();
       setPhase("done");
     } catch (error) {
       console.error("Private handle payment failed", error);
@@ -722,12 +750,6 @@ function DonePanel({
         >
           {copied ? "I've saved the link" : "I've copied the link"}
         </Button>
-      )}
-
-      {mode === "link" && (
-        <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
-          Mock preview · sending isn&apos;t wired up yet.
-        </p>
       )}
 
     </div>

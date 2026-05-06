@@ -4,6 +4,7 @@ import {
   getUserRegistrationFunction,
   getEncryptedBalanceQuerierFunction,
   getPublicBalanceToReceiverClaimableUtxoCreatorFunction,
+  getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction,
   getClaimableUtxoScannerFunction,
   getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
   getEncryptedBalanceToSelfClaimableUtxoCreatorFunction,
@@ -21,6 +22,7 @@ import {
   getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
   getClaimSelfClaimableUtxoIntoPublicBalanceProver,
   getCreateReceiverClaimableUtxoFromPublicBalanceProver,
+  getCreateReceiverClaimableUtxoFromEncryptedBalanceProver,
   getCreateSelfClaimableUtxoFromEncryptedBalanceProver,
   getUserRegistrationProver,
 } from "@umbra-privacy/web-zk-prover";
@@ -432,6 +434,49 @@ export function useUmbra() {
       });
       throw error;
     }
+  }
+
+  async function createPrivateReceiverClaimableUtxo({
+    signer: providedSigner,
+    amount,
+    address,
+  }: {
+    signer?: IUmbraSigner;
+    amount: number;
+    address: string;
+  }) {
+    const signer = providedSigner ?? getConnectedSigner();
+    const client = await getClient(signer);
+    const createUtxo = getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction(
+      { client },
+      {
+        zkProver: getCreateReceiverClaimableUtxoFromEncryptedBalanceProver({
+          assetProvider: getUmbraZkAssetProvider(),
+        }),
+      },
+    );
+    const amountInBaseUnits = nativeAmount(
+      amount,
+      solanaPaymentConfig.tokenDecimals,
+    );
+
+    console.info("[Umbra] Creating private receiver-claimable UTXO", {
+      network: UMBRA_CLIENT_CONFIG.network,
+      signer: signer.address,
+      destinationAddress: address,
+      amountBaseUnits: amountInBaseUnits.toString(),
+    });
+
+    const result = await createUtxo({
+      amount: amountInBaseUnits as U64,
+      destinationAddress: toAddress(address),
+      mint: solanaPaymentConfig.tokenMint,
+    });
+
+    return {
+      signature: result.callbackSignature ?? result.queueSignature,
+      result,
+    };
   }
 
   /**
@@ -846,6 +891,7 @@ export function useUmbra() {
     getPrivateTokenBalance,
     getPrivateUsdcBalance: getPrivateTokenBalance,
     createReceiverClaimableUtxo,
+    createPrivateReceiverClaimableUtxo,
     depositAmount: createReceiverClaimableUtxo,
     scanClaimableUtxos,
     scanRecentClaimableUtxos,

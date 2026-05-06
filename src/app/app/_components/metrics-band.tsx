@@ -40,7 +40,7 @@ export function MetricsBand({ user }: { user: AuthUser }) {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const { unlockedVault } = useAuth();
   const { account } = useWallet();
-  const { getPrivateUsdcBalance } = useUmbra();
+  const { getPrivateTokenBalance } = useUmbra();
   const {
     data: inboxPayments = [],
     isFetching: isLoadingInbox,
@@ -62,13 +62,13 @@ export function MetricsBand({ user }: { user: AuthUser }) {
     queryKey: ["metrics", "private-balance", unlockedVault?.vaultPubkey],
     queryFn: async () => {
       if (!unlockedVault) return null;
-      const result = await getPrivateUsdcBalance({
+      const result = await getPrivateTokenBalance({
         signer: createUmbraSignerFromKeyPair(unlockedVault.keyPairSigner),
       });
       const balance =
         result.state === "shared"
           ? Number(result.balance) / 10 ** solanaPaymentConfig.tokenDecimals
-          : null;
+          : 0;
 
       console.info("[Umbra] Private balance query completed", {
         vaultPubkey: unlockedVault.vaultPubkey,
