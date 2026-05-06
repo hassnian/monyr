@@ -65,6 +65,11 @@ type CreateProductPaymentContextInput = {
   description?: string | null;
   productKind?: "download" | "license" | "access";
   format?: string[];
+  cover?: {
+    fromHue: number;
+    toHue: number;
+    glyph: string;
+  };
 };
 
 type MarkInvoicePaidInput = {
@@ -253,6 +258,13 @@ export async function createProductPaymentContext(input: CreateProductPaymentCon
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 6);
+  const cover = input.cover
+    ? {
+        fromHue: input.cover.fromHue,
+        toHue: input.cover.toHue,
+        glyph: input.cover.glyph.trim().slice(0, 4) || "§",
+      }
+    : { fromHue: 38, toHue: 14, glyph: "§" };
 
   if (!title) throw new Error("Missing product title");
   if (!slug) throw new Error("Missing product slug");
@@ -260,6 +272,12 @@ export async function createProductPaymentContext(input: CreateProductPaymentCon
     throw new Error("Missing product price");
   }
   if (!downloadUrl) throw new Error("Missing download URL");
+  try {
+    const url = new URL(downloadUrl);
+    if (url.protocol !== "https:") throw new Error("Download URL must use HTTPS");
+  } catch {
+    throw new Error("Enter a valid HTTPS download URL");
+  }
   assertValidPath(path, { allowReservedRoot: true });
 
   const [ownerHandle] = await getDb()
@@ -290,7 +308,7 @@ export async function createProductPaymentContext(input: CreateProductPaymentCon
         description,
         productKind,
         format,
-        cover: { fromHue: 38, toHue: 14, glyph: "§" },
+        cover,
       },
     })
     .returning({

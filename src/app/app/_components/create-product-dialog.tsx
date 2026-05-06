@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
+import { createProductPaymentContext } from "@/app/actions/payment-contexts";
 import { handleUrl } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
@@ -139,11 +140,26 @@ export function CreateProductDialog({ open, onOpenChange, handle }: Props) {
     downloadUrl.trim().length > 0;
 
   async function handleCreate() {
-    if (!canSubmit) return;
+    if (!canSubmit || numericPrice === null) return;
     setPhase("creating");
-    // Mock — server action not wired yet.
-    await new Promise((r) => setTimeout(r, 900));
-    setPhase("done");
+
+    try {
+      await createProductPaymentContext({
+        handle,
+        slug,
+        title: title.trim(),
+        price: numericPrice,
+        downloadUrl: downloadUrl.trim(),
+        tagline: tagline.trim() || null,
+        description: description.trim() || null,
+        productKind: "download",
+        cover: { ...cover, glyph },
+      });
+      setPhase("done");
+    } catch (error) {
+      console.error("Failed to publish product", error);
+      setPhase("form");
+    }
   }
 
   function handleCopy() {
@@ -374,7 +390,7 @@ export function CreateProductDialog({ open, onOpenChange, handle }: Props) {
               </Button>
 
               <p className="text-center text-[11.5px] leading-relaxed text-muted-foreground/65">
-                Mock preview · publish flow isn&apos;t wired yet.
+                Buyers pay privately; the download unlocks after purchase.
               </p>
             </form>
           )}
@@ -652,7 +668,7 @@ function DonePanel({
       </div>
 
       <p className="text-center text-[12px] leading-relaxed text-muted-foreground/80">
-        Mock preview · sales settle privately on launch.
+        Sales settle privately. Buyers unlock the download after purchase.
       </p>
     </div>
   );
