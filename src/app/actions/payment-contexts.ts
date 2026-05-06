@@ -55,6 +55,18 @@ type CreateInvoicePaymentContextInput = {
   expiryDays: 7 | 14 | 30 | 60;
 };
 
+type CreateProductPaymentContextInput = {
+  handle: string;
+  slug: string;
+  title: string;
+  price: number;
+  downloadUrl: string;
+  tagline?: string | null;
+  description?: string | null;
+  productKind?: "download" | "license" | "access";
+  format?: string[];
+};
+
 type MarkInvoicePaidInput = {
   handle: string;
   path: string;
@@ -225,6 +237,77 @@ export async function createInvoicePaymentContext(input: CreateInvoicePaymentCon
   }
 
   throw new Error("Failed to create invoice");
+}
+
+export async function createProductPaymentContext(input: CreateProductPaymentContextInput) {
+  const session = await requireWalletSession();
+  const handle = normalizeHandle(input.handle);
+  const title = input.title.trim();
+  const slug = normalizePath(input.slug);
+  const path = `product/${slug}`;
+  const downloadUrl = input.downloadUrl.trim();
+  const tagline = input.tagline?.trim() || null;
+  const description = input.description?.trim() || null;
+  const productKind = input.productKind ?? "download";
+  const format = (input.format ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+
+  if (!title) throw new Error("Missing product title");
+  if (!slug) throw new Error("Missing product slug");
+  if (!Number.isFinite(input.price) || input.price <= 0) {
+    throw new Error("Missing product price");
+  }
+  if (!downloadUrl) throw new Error("Missing download URL");
+  assertValidPath(path, { allowReservedRoot: true });
+
+  const [ownerHandle] = await getDb()
+    .select({ id: handles.id, handle: handles.handle })
+    .from(handles)
+    .where(
+      and(
+        eq(handles.handle, handle),
+        eq(handles.owner_wallet_lookup, getOwnerWalletLookup(session.walletAddress)),
+      ),
+    )
+    .limit(1);
+
+  if (!ownerHandle) throw new Error("Handle not found");
+
+  const [context] = await getDb()
+    .insert(paymentContexts)
+    .values({
+      handle_id: ownerHandle.id,
+      kind: "product",
+      path,
+      title,
+      status: "active",
+      config: {
+        price: input.price,
+        downloadUrl,
+        tagline,
+        description,
+        productKind,
+        format,
+        cover: { fromHue: 38, toHue: 14, glyph: "§" },
+      },
+    })
+    .returning({
+      id: paymentContexts.id,
+      kind: paymentContexts.kind,
+      path: paymentContexts.path,
+      title: paymentContexts.title,
+      status: paymentContexts.status,
+      config: paymentContexts.config,
+      createdAt: paymentContexts.created_at,
+      updatedAt: paymentContexts.updated_at,
+    });
+
+  return {
+    ...context,
+    handle: ownerHandle.handle,
+  } satisfies PaymentContext;
 }
 
 export async function markInvoicePaymentContextPaid(input: MarkInvoicePaidInput) {

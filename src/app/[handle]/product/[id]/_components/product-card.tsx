@@ -1,36 +1,168 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Lock, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
+import { ConfettiBurst } from "@/components/ui/confetti-burst";
+import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
+import { useAuth } from "@/app/contexts/auth-context";
+import { useWallet } from "@/app/contexts/wallet-context";
+import { getMyProductPurchase, recordProductPurchase } from "@/app/actions/product-purchases";
+import { PayConfirmationModal } from "@/app/[handle]/_components/pay-confirmation-modal";
 import { cn } from "@/lib/utils";
 import { ProductCover } from "./product-cover";
-import type { ProductMock } from "../_data";
+import type { UmbraStatus } from "@/app/[handle]/_components/profile.types";
 
-const KIND_COPY: Record<ProductMock["kind"], { label: string; cta: string }> = {
+export type ProductPageProduct = {
+  id: string;
+  slug: string;
+  path: string;
+  title: string;
+  tagline: string;
+  description: string;
+  price: number;
+  kind: "download" | "license" | "access";
+  format: string[];
+  cover: {
+    fromHue: number;
+    toHue: number;
+    glyph: string;
+  };
+  seller: {
+    handle: string;
+    displayName: string;
+    vaultPubkey: string;
+    umbraStatus: UmbraStatus;
+    receiptEncryptionPublicKey: string;
+  };
+  stats: {
+    sold: number;
+    rating?: number;
+  };
+};
+
+const KIND_COPY: Record<ProductPageProduct["kind"], { label: string; cta: string }> = {
   download: { label: "Digital download", cta: "Buy & download" },
   license: { label: "License", cta: "Buy license" },
   access: { label: "Access pass", cta: "Buy access" },
 };
 
-export function ProductCard({ product }: { product: ProductMock }) {
+export function ProductCard({
+  product,
+}: {
+  product: ProductPageProduct;
+}) {
   const [pending, setPending] = useState(false);
+  const [access, setAccess] = useState<{
+    walletAddress: string | null;
+    purchased: boolean;
+    downloadUrl: string | null;
+  }>({ walletAddress: null, purchased: false, downloadUrl: null });
+  const [openConfirmationModal, setConfirmationModalOpen] = useState(false);
+  const [openConnectWalletModal, setConnectWalletModalOpen] = useState(false);
+  const [confettiKey, setConfettiKey] = useState<number | null>(null);
+  const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kindCopy = KIND_COPY[product.kind];
   const isUmbraActive = product.seller.umbraStatus === "active";
+  const { connectedWallet } = useWallet();
+  const { walletAddress, isUserLoading } = useAuth();
+  const purchased = Boolean(walletAddress && access.walletAddress === walletAddress && access.purchased);
+  const downloadUrl = purchased ? access.downloadUrl : null;
+
+  useEffect(() => {
+    return () => {
+      if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!walletAddress || isUserLoading) return;
+
+    async function refreshAccess() {
+      try {
+        const nextAccess = await getMyProductPurchase({
+          handle: product.seller.handle,
+          path: product.path,
+        });
+        if (cancelled) return;
+        setAccess({
+          walletAddress,
+          purchased: nextAccess.purchased,
+          downloadUrl: nextAccess.downloadUrl,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to refresh product access", error);
+        }
+      }
+    }
+
+    void refreshAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isUserLoading, product.path, product.seller.handle, walletAddress]);
+
+  function openDownload() {
+    if (!downloadUrl) return;
+    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+  }
 
   function onBuy() {
+    if (purchased) {
+      openDownload();
+      return;
+    }
+
+    if (!connectedWallet) {
+      setConnectWalletModalOpen(true);
+      return;
+    }
+
+    setConfirmationModalOpen(true);
+  }
+
+  async function recordPurchase(paymentSignature: string) {
     setPending(true);
-    window.setTimeout(() => setPending(false), 1100);
+    try {
+      const access = await recordProductPurchase({
+        handle: product.seller.handle,
+        path: product.path,
+        paymentSignature,
+      });
+      setAccess({
+        walletAddress,
+        purchased: access.purchased,
+        downloadUrl: access.downloadUrl,
+      });
+      if (access.purchased) {
+        setConfettiKey(Date.now());
+        if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+        confettiTimerRef.current = setTimeout(() => {
+          setConfettiKey(null);
+          confettiTimerRef.current = null;
+        }, 4_800);
+      }
+    } catch (error) {
+      console.error("Failed to record product purchase", error);
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
-    <section
-      aria-labelledby="product-title"
-      className="relative w-full max-w-4xl"
-    >
+    <>
+      {confettiKey !== null && <ConfettiBurst key={confettiKey} />}
+      <section
+        aria-labelledby="product-title"
+        className="relative w-full max-w-4xl"
+      >
       {/* Soft amber glow behind the card — same candlelight as the profile. */}
       <div
         aria-hidden
@@ -156,7 +288,7 @@ export function ProductCard({ product }: { product: ProductMock }) {
                   "transition-all",
                 )}
               >
-                {pending ? "Preparing checkout…" : kindCopy.cta}
+                {pending ? "Preparing checkout…" : purchased ? "Download" : kindCopy.cta}
               </Button>
 
               {isUmbraActive && (
@@ -169,6 +301,30 @@ export function ProductCard({ product }: { product: ProductMock }) {
           </aside>
         </div>
       </div>
-    </section>
+      </section>
+
+      <PayConfirmationModal
+        open={openConfirmationModal}
+        onOpenChange={setConfirmationModalOpen}
+        handle={product.seller.handle}
+        vaultPubkey={product.seller.vaultPubkey}
+        umbraStatus={product.seller.umbraStatus}
+        receiptEncryptionPublicKey={product.seller.receiptEncryptionPublicKey}
+        displayName={product.seller.displayName}
+        amount={product.price}
+        memo={product.title}
+        subPath={product.path}
+        onPaymentSuccess={recordPurchase}
+      />
+
+      <ConnectWalletModal
+        open={openConnectWalletModal}
+        onOpenChange={setConnectWalletModalOpen}
+        onConnected={() => {
+          setConnectWalletModalOpen(false);
+          setConfirmationModalOpen(true);
+        }}
+      />
+    </>
   );
 }

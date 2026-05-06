@@ -31,6 +31,7 @@ type Props = ProfileIdentity & {
   amount: number;
   memo?: string;
   invoiceId?: string;
+  onPaymentSuccess?: (paymentSignature: string) => void | Promise<void>;
 };
 
 type Step =
@@ -60,6 +61,7 @@ export function PayConfirmationModal({
   memo,
   subPath,
   invoiceId,
+  onPaymentSuccess,
   vaultPubkey,
   umbraStatus,
   receiptEncryptionPublicKey,
@@ -147,6 +149,7 @@ export function PayConfirmationModal({
       const receiptSignature = String(result.signature);
       setReceiptSignature(receiptSignature);
       await markInvoicePaid(receiptSignature);
+      await onPaymentSuccess?.(receiptSignature);
       setStep("success");
     } catch (error) {
       console.error("Quick Pay failed", error);
@@ -179,6 +182,7 @@ export function PayConfirmationModal({
         console.error("Failed to save payment metadata", error);
       });
       await markInvoicePaid(utxoCreateSignature);
+      await onPaymentSuccess?.(utxoCreateSignature);
       setStep("success");
     } catch (error) {
       console.error("Private Pay failed", error);

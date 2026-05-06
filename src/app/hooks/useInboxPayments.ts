@@ -105,6 +105,9 @@ function getPaymentSubLabel(metadata: PaymentMetadataPayload | null) {
   if (metadata?.subPath?.startsWith("invoice/")) {
     return `Invoice ${metadata.subPath.slice("invoice/".length)}`;
   }
+  if (metadata?.subPath?.startsWith("product/")) {
+    return "Product";
+  }
   return null;
 }
 

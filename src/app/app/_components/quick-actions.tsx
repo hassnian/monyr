@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Loader2, Lock, Send, Tag, Receipt } from "lucide-react";
+import { FileText, Loader2, Lock, Package, Send, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUnlockDashboard } from "@/app/hooks/useUnlockDashboard";
 
 import { CreateInvoiceDialog } from "./create-invoice-dialog";
 import { CreateLabelDialog } from "./create-label-dialog";
+import { CreateProductDialog } from "./create-product-dialog";
 import { SendPrivatelyDialog } from "./send-privately-dialog";
 
-type ActionKey = "invoice" | "label" | "send" | "receipts";
+type ActionKey = "invoice" | "label" | "send" | "product";
 
 type Action = {
   key: ActionKey;
@@ -40,11 +41,10 @@ const ACTIONS: Action[] = [
     icon: <Send className="size-4" strokeWidth={2} />,
   },
   {
-    key: "receipts",
-    title: "Export receipts",
-    detail: "Signed PDF · CSV · viewing grant",
-    icon: <Receipt className="size-4" strokeWidth={2} />,
-    disabled: true,
+    key: "product",
+    title: "New product",
+    detail: "Sell a download or license",
+    icon: <Package className="size-4" strokeWidth={2} />,
   },
 ];
 
@@ -140,6 +140,11 @@ export function QuickActions({ handle }: { handle: string }) {
       <SendPrivatelyDialog
         open={openAction === "send"}
         onOpenChange={(open) => (open ? setOpenAction("send") : close())}
+      />
+      <CreateProductDialog
+        open={openAction === "product"}
+        onOpenChange={(open) => (open ? setOpenAction("product") : close())}
+        handle={handle}
       />
     </>
   );

@@ -56,7 +56,7 @@ export function Outbox() {
         </ol>
       </section>
 
-      <section>
+      {/* <section>
         <div className="mb-4 max-w-xl space-y-1">
           <h3 className="font-serif text-2xl leading-tight tracking-tight text-foreground">
             Active send-links
@@ -72,7 +72,7 @@ export function Outbox() {
             <SendLinkCard key={l.id} link={l} />
           ))}
         </div>
-      </section>
+      </section> */}
     </div>
   );
 }

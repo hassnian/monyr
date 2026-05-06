@@ -21,6 +21,12 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
@@ -406,7 +412,12 @@ function ModeSwitch({
   onChange: (mode: Mode) => void;
   disabled?: boolean;
 }) {
-  const options: { value: Mode; label: string; icon: React.ReactNode }[] = [
+  const options: {
+    value: Mode;
+    label: string;
+    icon: React.ReactNode;
+    comingSoon?: boolean;
+  }[] = [
     {
       value: "handle",
       label: "To handle",
@@ -416,40 +427,57 @@ function ModeSwitch({
       value: "link",
       label: "Claimable link",
       icon: <Link2 className="size-3.5" strokeWidth={2.25} />,
+      comingSoon: true,
     },
   ];
 
   return (
-    <div
-      role="tablist"
-      aria-label="Send mode"
-      className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-raised/40 p-1"
-    >
-      {options.map((opt) => {
-        const selected = mode === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            disabled={disabled}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-[12.5px] font-medium transition-all",
-              "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-              selected
-                ? "bg-card text-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_4px_10px_-6px_rgba(0,0,0,0.5)]"
-                : "text-muted-foreground hover:text-foreground",
-              disabled && "cursor-not-allowed opacity-55",
-            )}
-          >
-            {opt.icon}
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+    <TooltipProvider delay={150}>
+      <div
+        role="tablist"
+        aria-label="Send mode"
+        className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-raised/40 p-1"
+      >
+        {options.map((opt) => {
+          const selected = mode === opt.value && !opt.comingSoon;
+          const isDisabled = disabled || opt.comingSoon;
+          const button = (
+            <button
+              key={opt.value}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-disabled={isDisabled}
+              disabled={disabled}
+              onClick={() => {
+                if (opt.comingSoon) return;
+                onChange(opt.value);
+              }}
+              className={cn(
+                "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-[12.5px] font-medium transition-all",
+                "outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                selected
+                  ? "bg-card text-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_4px_10px_-6px_rgba(0,0,0,0.5)]"
+                  : "text-muted-foreground hover:text-foreground",
+                isDisabled && "cursor-not-allowed opacity-55 hover:text-muted-foreground",
+              )}
+            >
+              {opt.icon}
+              {opt.label}
+            </button>
+          );
+          if (opt.comingSoon) {
+            return (
+              <Tooltip key={opt.value}>
+                <TooltipTrigger render={button} />
+                <TooltipContent>Coming soon</TooltipContent>
+              </Tooltip>
+            );
+          }
+          return button;
+        })}
+      </div>
+    </TooltipProvider>
   );
 }
 

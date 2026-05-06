@@ -93,6 +93,29 @@ export const claimableUtxos = pgTable(
   ],
 );
 
+export const productPurchases = pgTable(
+  "product_purchases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    product_context_id: uuid("product_context_id")
+      .notNull()
+      .references(() => paymentContexts.id, { onDelete: "cascade" }),
+    buyer_wallet_lookup: text("buyer_wallet_lookup").notNull(),
+    payment_signature: text("payment_signature").notNull(),
+    status: paymentContextStatusEnum("status").notNull().default("paid"),
+    created_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    unique("product_purchases_context_buyer_unique").on(
+      table.product_context_id,
+      table.buyer_wallet_lookup,
+    ),
+    unique("product_purchases_payment_signature_unique").on(table.payment_signature),
+    index("product_purchases_buyer_wallet_lookup_idx").on(table.buyer_wallet_lookup),
+  ],
+);
+
 export const paymentMetadata = pgTable(
   "payment_metadata",
   {
