@@ -53,7 +53,11 @@ export function MetricsBand({ user }: { user: AuthUser }) {
   const isUnlocked =
     isActive && unlockedVault?.vaultPubkey === user.vaultPubkey;
 
-  const { data: privateBalance, isFetching: isLoadingBalance } = useQuery({
+  const {
+    data: privateBalance,
+    isFetching: isLoadingBalance,
+    isLoading: isInitialLoadingBalance,
+  } = useQuery({
     enabled: isUnlocked && Boolean(unlockedVault),
     queryKey: ["metrics", "private-balance", unlockedVault?.vaultPubkey],
     queryFn: async () => {
@@ -133,12 +137,17 @@ export function MetricsBand({ user }: { user: AuthUser }) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-        {/* Hero tile — total received + sparkline */}
+        {/* Hero tile — private balance (withdrawable) + lifetime context */}
         <Tile
           className="md:col-span-3"
-          label="Total received (private)"
+          label="Private balance"
           eyebrow={
-            isLoadingBalance || isLoadingInbox ? (
+            isLoadingBalance ? (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
+                <Loader2 className="size-3 animate-spin text-primary" />
+                Syncing vault…
+              </span>
+            ) : isLoadingInbox ? (
               <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground/80">
                 <Loader2 className="size-3 animate-spin text-primary" />
                 Syncing inbox…
@@ -173,26 +182,37 @@ export function MetricsBand({ user }: { user: AuthUser }) {
 
           <div className="min-w-0">
             <AmountDisplay
-              amount={null}
-              amountBaseUnits={claimedSummary.totalReceivedBaseUnits}
+              amount={privateBalance ?? null}
               hidden={!showAmounts}
-              loading={isInitialLoadingInbox || claimedSummary.isLoading}
+              loading={isInitialLoadingBalance}
               size="xl"
               className="leading-none"
             />
-            <div className="mt-2 text-[12px] text-muted-foreground/80">
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] text-muted-foreground/80">
               {isInitialLoadingInbox || claimedSummary.isLoading ? (
-                <Skeleton className="inline-block h-3 w-44 align-middle bg-muted/50" />
+                <Skeleton className="inline-block h-3 w-56 align-middle bg-muted/50" />
               ) : (
                 <>
-                  <span className="font-mono tabular">
-                    {showAmounts ? claimedSummary.totalReceivedCount : "••"}
-                  </span>{" "}
-                  payments · across{" "}
-                  <span className="font-mono tabular">
-                    {showAmounts ? inboxSummary.labelsAndInvoicesCount : "••"}
-                  </span>{" "}
-                  labels & invoices
+                  <span className="inline-flex items-baseline gap-1.5">
+                    <span>Total received</span>
+                    <AmountDisplay
+                      amount={null}
+                      amountBaseUnits={claimedSummary.totalReceivedBaseUnits}
+                      hidden={!showAmounts}
+                      size="sm"
+                    />
+                  </span>
+                  <span aria-hidden className="text-muted-foreground/40">·</span>
+                  <span>
+                    <span className="font-mono tabular">
+                      {showAmounts ? claimedSummary.totalReceivedCount : "••"}
+                    </span>{" "}
+                    payments across{" "}
+                    <span className="font-mono tabular">
+                      {showAmounts ? inboxSummary.labelsAndInvoicesCount : "••"}
+                    </span>{" "}
+                    labels &amp; invoices
+                  </span>
                 </>
               )}
             </div>
