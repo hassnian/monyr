@@ -447,7 +447,7 @@ function DemoCloser() {
         </div>
 
         <p className="mt-12 font-serif text-[13.5px] italic leading-relaxed text-muted-foreground/70">
-          Live on Solana mainnet. Powered by Umbra.
+          Live on Solana devnet. Powered by Umbra.
         </p>
       </div>
     </section>

@@ -102,7 +102,7 @@ function HeroCopy() {
       <p className="mt-14 flex max-w-md flex-wrap items-center gap-x-1.5 font-serif text-[14px] italic leading-relaxed text-muted-foreground/75">
         <span>Non-custodial. One signature. Live on</span>
         <SolanaMark className="h-[0.72em] w-auto translate-y-[0.02em] text-foreground/70" />
-        <span>Solana mainnet — amounts, memos, and senders stay off the public ledger.</span>
+        <span>Solana devnet — amounts, memos, and senders stay off the public ledger.</span>
       </p>
     </div>
   );

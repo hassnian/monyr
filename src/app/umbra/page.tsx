@@ -946,7 +946,7 @@ function SectionClose() {
         </div>
 
         <p className="mt-12 font-serif text-[13.5px] italic leading-relaxed text-muted-foreground/70">
-          Live on Solana mainnet. First consumer product on Umbra.
+          Live on Solana devnet. First consumer product on Umbra.
         </p>
       </div>
     </section>

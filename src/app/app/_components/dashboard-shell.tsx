@@ -78,7 +78,7 @@ export function DashboardShell() {
             Non-custodial. Amounts, memos, and senders stay off the public ledger.
           </p>
           <p className="font-mono tabular text-[11px] uppercase tracking-[0.2em]">
-            Monyr v0.1 · Solana mainnet
+            Monyr v0.1 · Solana devnet
           </p>
         </footer>
       </main>

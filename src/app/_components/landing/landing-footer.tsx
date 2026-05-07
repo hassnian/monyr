@@ -53,7 +53,7 @@ export function LandingFooter() {
             <p className="mt-6 inline-flex items-center gap-1.5 font-mono tabular text-[10.5px] uppercase tracking-[0.22em] text-muted-foreground/70">
               Live on
               <SolanaMark className="h-[0.85em] w-auto translate-y-[0.04em] text-foreground/65" />
-              Solana mainnet
+              Solana devnet
             </p>
           </div>
 
