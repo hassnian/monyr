@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Check, Loader2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,24 @@ type RowState = "pending" | "active" | "done";
 type Props = {
   onComplete: () => void;
 };
+
+type RegistrationUiState = {
+  walletAddress: string | null;
+  phase: Phase;
+  error: string | null;
+  activeStep: RegistrationStep | null;
+  completedSteps: RegistrationStep[];
+};
+
+function initialRegistrationUiState(walletAddress: string | null): RegistrationUiState {
+  return {
+    walletAddress,
+    phase: "idle",
+    error: null,
+    activeStep: null,
+    completedSteps: [],
+  };
+}
 
 const STEP_ROWS: Array<{
   key: RegistrationStep;
@@ -42,12 +60,19 @@ const STEP_ROWS: Array<{
 ];
 
 export default function UmbraRegister({ onComplete }: Props) {
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<RegistrationStep | null>(null);
-  const [completedSteps, setCompletedSteps] = useState<RegistrationStep[]>([]);
   const { getUserAccount, registerAccount, isAccountFullyRegistered } = useUmbra();
   const { connectedWallet } = useWallet();
+  const walletAddress = connectedWallet?.account.address ?? null;
+  const [storedUiState, setStoredUiState] = useState<RegistrationUiState>(() =>
+    initialRegistrationUiState(walletAddress),
+  );
+  const completedCallbackWalletRef = useRef<string | null>(null);
+
+  const uiState =
+    storedUiState.walletAddress === walletAddress
+      ? storedUiState
+      : initialRegistrationUiState(walletAddress);
+  const { phase, error, activeStep, completedSteps } = uiState;
 
   const {
     isPending: isCheckingRegistration,
@@ -55,7 +80,7 @@ export default function UmbraRegister({ onComplete }: Props) {
     refetch: refetchUserAccount,
   } = useQuery({
     enabled: Boolean(connectedWallet),
-    queryKey: ["umbra-user-account", connectedWallet?.account.address],
+    queryKey: ["umbra-user-account", walletAddress],
     queryFn: getUserAccount,
   });
 
@@ -77,62 +102,79 @@ export default function UmbraRegister({ onComplete }: Props) {
   const hasStartedRegistration = mergedCompletedSteps.length > 0;
 
   useEffect(() => {
-    if (isAccountAlreadyRegistered) {
-      setPhase("done");
-      setActiveStep(null);
-      onComplete();
+    if (!isAccountAlreadyRegistered || completedCallbackWalletRef.current === walletAddress) {
+      return;
     }
-  }, [isAccountAlreadyRegistered, onComplete]);
 
-  useEffect(() => {
-    setPhase("idle");
-    setError(null);
-    setActiveStep(null);
-    setCompletedSteps([]);
-  }, [connectedWallet?.account.address]);
+    completedCallbackWalletRef.current = walletAddress;
+    onComplete();
+  }, [isAccountAlreadyRegistered, onComplete, walletAddress]);
+
+  const updateUiState = (updates: Partial<Omit<RegistrationUiState, "walletAddress">>) => {
+    setStoredUiState((current) => ({
+      ...initialRegistrationUiState(walletAddress),
+      ...(current.walletAddress === walletAddress ? current : {}),
+      ...updates,
+      walletAddress,
+    }));
+  };
 
   const markStepDone = (step: RegistrationStep) => {
-    setCompletedSteps((current) =>
-      current.includes(step) ? current : [...current, step],
-    );
+    setStoredUiState((current) => {
+      const base =
+        current.walletAddress === walletAddress
+          ? current
+          : initialRegistrationUiState(walletAddress);
+
+      return {
+        ...base,
+        completedSteps: base.completedSteps.includes(step)
+          ? base.completedSteps
+          : [...base.completedSteps, step],
+      };
+    });
   };
 
   const handleStart = async () => {
     if (!connectedWallet) return;
 
-    setError(null);
-    setPhase("signing");
-    setActiveStep(null);
+    updateUiState({ error: null, phase: "signing", activeStep: null });
 
     try {
       await registerAccount({
         callbacks: {
           userAccountInitialisation: {
             pre: async () => {
-              setPhase("registering");
-              setActiveStep("userAccountInitialisation");
+              updateUiState({
+                phase: "registering",
+                activeStep: "userAccountInitialisation",
+              });
             },
             post: async (_, sig) => {
               markStepDone("userAccountInitialisation");
-              setActiveStep("registerX25519PublicKey");
+              updateUiState({ activeStep: "registerX25519PublicKey" });
               console.log(`Account created: ${sig}`);
             },
           },
           registerX25519PublicKey: {
             pre: async () => {
-              setPhase("registering");
-              setActiveStep("registerX25519PublicKey");
+              updateUiState({
+                phase: "registering",
+                activeStep: "registerX25519PublicKey",
+              });
             },
             post: async (_, sig) => {
               markStepDone("registerX25519PublicKey");
-              setActiveStep("registerUserForAnonymousUsage");
+              updateUiState({ activeStep: "registerUserForAnonymousUsage" });
               console.log(`Encryption key registered: ${sig}`);
             },
           },
           registerUserForAnonymousUsage: {
             pre: async () => {
-              setPhase("registering");
-              setActiveStep("registerUserForAnonymousUsage");
+              updateUiState({
+                phase: "registering",
+                activeStep: "registerUserForAnonymousUsage",
+              });
             },
             post: async (_, sig) => {
               markStepDone("registerUserForAnonymousUsage");
@@ -143,19 +185,22 @@ export default function UmbraRegister({ onComplete }: Props) {
       });
 
       await refetchUserAccount();
-      setActiveStep(null);
-      setPhase("done");
+      updateUiState({ activeStep: null, phase: "done" });
       onComplete();
     } catch (error) {
       console.log(error);
       await refetchUserAccount();
-      setActiveStep(null);
-      setPhase("idle");
-      setError("That didn't go through. Try again.");
+      updateUiState({
+        activeStep: null,
+        phase: "idle",
+        error: "That didn't go through. Try again.",
+      });
     }
   };
 
-  const isWorking = phase === "signing" || phase === "registering";
+  const displayPhase = isAccountAlreadyRegistered ? "done" : phase;
+  const displayActiveStep = isAccountAlreadyRegistered ? null : activeStep;
+  const isWorking = displayPhase === "signing" || displayPhase === "registering";
 
   return (
     <div className="space-y-5">
@@ -165,7 +210,7 @@ export default function UmbraRegister({ onComplete }: Props) {
             key={step.key}
             label={step.label}
             sub={step.sub}
-            state={getStepState(step.key, mergedCompletedSteps, activeStep)}
+            state={getStepState(step.key, mergedCompletedSteps, displayActiveStep)}
           />
         ))}
       </div>
@@ -176,7 +221,7 @@ export default function UmbraRegister({ onComplete }: Props) {
           !connectedWallet ||
           isWorking ||
           isCheckingRegistration ||
-          phase === "done"
+          displayPhase === "done"
         }
         className="h-12 w-full rounded-xl bg-primary text-base font-semibold text-primary-foreground hover:bg-primary/90"
       >
@@ -186,21 +231,21 @@ export default function UmbraRegister({ onComplete }: Props) {
             Checking…
           </>
         )}
-        {!isCheckingRegistration && phase === "idle" &&
+        {!isCheckingRegistration && displayPhase === "idle" &&
           (hasStartedRegistration ? "Continue & pay" : "Set up & pay")}
-        {phase === "signing" && (
+        {displayPhase === "signing" && (
           <>
             <Loader2 className="mr-2 size-4 animate-spin" />
             Waiting for wallet approval…
           </>
         )}
-        {phase === "registering" && (
+        {displayPhase === "registering" && (
           <>
             <Loader2 className="mr-2 size-4 animate-spin" />
-            {getRegisteringLabel(activeStep)}
+            {getRegisteringLabel(displayActiveStep)}
           </>
         )}
-        {phase === "done" && (
+        {displayPhase === "done" && (
           <>
             <Check className="mr-2 size-4" strokeWidth={3} />
             Ready
