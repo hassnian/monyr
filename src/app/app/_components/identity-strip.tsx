@@ -27,18 +27,60 @@ type Props = {
 export function IdentityStrip({ user, onActivated }: Props) {
   const url = handleUrl(user.handle);
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
 
   const isActive = user.umbraStatus === "active";
   const displayName = user.displayName?.trim() || user.handle;
+  const profileUrl = `https://${url}`;
+
+  function markCopied() {
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  function markShared() {
+    setShared(true);
+    window.setTimeout(() => setShared(false), 1600);
+  }
 
   function copy() {
     try {
-      navigator.clipboard?.writeText(`https://${url}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      navigator.clipboard?.writeText(profileUrl);
+      markCopied();
     } catch {
       /* clipboard may be blocked in some contexts — ignore. */
+    }
+  }
+
+  async function shareProfile() {
+    const shareData = {
+      title: `${displayName} on Monyr`,
+      text: `Pay ${displayName} privately on Monyr.`,
+      url: profileUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        markShared();
+        return;
+      }
+
+      await navigator.clipboard?.writeText(profileUrl);
+      markCopied();
+      markShared();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      try {
+        await navigator.clipboard?.writeText(profileUrl);
+        markCopied();
+      } catch {
+        /* clipboard may be blocked in some contexts — ignore. */
+      }
     }
   }
 
@@ -131,8 +173,15 @@ export function IdentityStrip({ user, onActivated }: Props) {
             icon={<ExternalLink className="size-4" />}
           />
           <IconAction
-            label="Share profile"
-            icon={<Share2 className="size-4" />}
+            label={shared ? "Profile shared" : "Share profile"}
+            onClick={shareProfile}
+            icon={
+              shared ? (
+                <Check className="size-4 text-primary" strokeWidth={2.5} />
+              ) : (
+                <Share2 className="size-4" />
+              )
+            }
           />
         </div>
       </div>
@@ -170,10 +219,12 @@ function IconAction({
   href,
   label,
   icon,
+  onClick,
 }: {
   href?: string;
   label: string;
   icon: React.ReactNode;
+  onClick?: () => void | Promise<void>;
 }) {
   const className = cn(
     "grid size-10 place-items-center rounded-lg border text-muted-foreground transition-all",
@@ -195,7 +246,7 @@ function IconAction({
     );
   }
   return (
-    <button type="button" aria-label={label} className={className}>
+    <button type="button" aria-label={label} className={className} onClick={onClick}>
       {icon}
     </button>
   );
