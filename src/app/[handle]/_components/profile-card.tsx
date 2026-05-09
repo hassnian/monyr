@@ -8,12 +8,14 @@ import { GradientAvatar } from "@/components/payments/gradient-avatar";
 import { HandleText } from "@/components/payments/handle-text";
 import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
+import { DevnetFaucetHint } from "@/components/payments/devnet-faucet-hint";
 import { PayConfirmationModal } from "./pay-confirmation-modal";
 import { formatDecimalAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { formatShortDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/app/contexts/wallet-context";
+import { useWalletTokenBalance } from "@/app/hooks/useWalletTokenBalance";
 import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
 import type { ProfileDetails } from "./profile.types";
 
@@ -273,6 +275,9 @@ function TipJarBlock({
   setAmount: (v: string) => void;
 }) {
   const numeric = Number.parseFloat(amount || "0");
+  const { balance: walletBalance } = useWalletTokenBalance();
+  const insufficient =
+    walletBalance !== null && numeric > 0 && numeric > walletBalance;
 
   return (
     <div className="space-y-4">
@@ -320,6 +325,10 @@ function TipJarBlock({
         size="lg"
         value={amount}
         onValueChange={setAmount}
+        invalid={insufficient}
+        validationMessage={
+          insufficient ? `Not enough ${solanaPaymentConfig.tokenSymbol}.` : undefined
+        }
       />
     </div>
   );
@@ -335,6 +344,8 @@ function InvoiceBlock({
   dueAt?: string;
 }) {
   const dueLabel = formatShortDate(dueAt);
+  const { balance: walletBalance } = useWalletTokenBalance();
+  const insufficient = walletBalance !== null && amount > walletBalance;
 
   return (
     <div className="space-y-5">
@@ -346,9 +357,22 @@ function InvoiceBlock({
           <span className="text-[11px] text-muted-foreground">Due {dueLabel}</span>
         )}
       </div>
-      <div className="rounded-xl border border-border-strong bg-surface-raised/40 p-5">
+      <div
+        className={cn(
+          "rounded-xl border border-border-strong bg-surface-raised/40 p-5",
+          insufficient && "border-warning/60",
+        )}
+      >
         <AmountDisplay amount={amount} size="xl" />
       </div>
+      {insufficient && (
+        <p className="-mt-2 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px]">
+          <span className="text-muted-foreground/85">
+            Not enough {solanaPaymentConfig.tokenSymbol}.
+          </span>
+          <DevnetFaucetHint tone="warning" />
+        </p>
+      )}
       {memo.trim() && (
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase mb-2">

@@ -10,6 +10,8 @@ import { ConfettiBurst } from "@/components/ui/confetti-burst";
 import { ConnectWalletModal } from "@/app/components/wallet/ConnectWalletModal";
 import { useAuth } from "@/app/contexts/auth-context";
 import { useWallet } from "@/app/contexts/wallet-context";
+import { useWalletTokenBalance } from "@/app/hooks/useWalletTokenBalance";
+import { DevnetFaucetHint } from "@/components/payments/devnet-faucet-hint";
 import { getMyProductPurchase, recordProductPurchase } from "@/app/actions/product-purchases";
 import { PayConfirmationModal } from "@/app/[handle]/_components/pay-confirmation-modal";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
@@ -70,8 +72,13 @@ export function ProductCard({
   const isUmbraActive = product.seller.umbraStatus === "active";
   const { connectedWallet } = useWallet();
   const { walletAddress, isUserLoading } = useAuth();
+  const { balance: walletBalance } = useWalletTokenBalance();
   const purchased = Boolean(walletAddress && access.walletAddress === walletAddress && access.purchased);
   const downloadUrl = purchased ? access.downloadUrl : null;
+  const insufficient =
+    !purchased &&
+    walletBalance !== null &&
+    product.price > walletBalance;
 
   useEffect(() => {
     return () => {
@@ -291,6 +298,15 @@ export function ProductCard({
               >
                 {pending ? "Preparing checkout…" : purchased ? "Download" : kindCopy.cta}
               </Button>
+
+              {insufficient && (
+                <p className="mt-3 flex flex-wrap items-baseline justify-center gap-x-1.5 text-[11.5px]">
+                  <span className="text-muted-foreground/85">
+                    Not enough {solanaPaymentConfig.tokenSymbol}.
+                  </span>
+                  <DevnetFaucetHint tone="warning" />
+                </p>
+              )}
 
               {isUmbraActive && (
                 <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground/85">

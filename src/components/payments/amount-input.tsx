@@ -4,6 +4,7 @@ import { useId, useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DevnetFaucetHint } from "@/components/payments/devnet-faucet-hint";
 import { formatBaseUnitsAmount, nativeAmount } from "@/lib/payments/amount";
 import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { cn } from "@/lib/utils";
@@ -107,6 +108,11 @@ export function AmountInput(props: AmountInputProps) {
     maxBaseUnits !== null &&
     maxBaseUnits > 0n;
 
+  const isDevnet = solanaPaymentConfig.chain === "solana:devnet";
+  const balanceIsEmpty =
+    isOwner && !isLoadingBalance && balance !== null && balance <= 0;
+  const showFaucetHint = isDevnet && (Boolean(invalid) || balanceIsEmpty);
+
   function handleMaxClick() {
     if (!canMax || maxBaseUnits === null) return;
     const formatted = formatBaseUnitsAmount(maxBaseUnits, {
@@ -194,8 +200,23 @@ export function AmountInput(props: AmountInputProps) {
         </div>
       </div>
 
-      {validationMessage && (
-        <p className="text-[11.5px] text-warning">{validationMessage}</p>
+      {(validationMessage || showFaucetHint) && (
+        <p className="flex flex-wrap items-baseline gap-x-1.5 text-[11.5px]">
+          {validationMessage && (
+            <span
+              className={
+                showFaucetHint && invalid
+                  ? "text-muted-foreground/85"
+                  : "text-warning"
+              }
+            >
+              {validationMessage}
+            </span>
+          )}
+          {showFaucetHint && (
+            <DevnetFaucetHint tone={invalid ? "warning" : "muted"} />
+          )}
+        </p>
       )}
     </div>
   );

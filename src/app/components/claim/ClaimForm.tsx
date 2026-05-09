@@ -18,7 +18,7 @@ import { z } from "zod";
 import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import { addHandle, hadnleExists as handleExists } from "@/app/actions/handles";
+import { addHandle, handleExists } from "@/app/actions/handles";
 import { useRef, useState } from "react";
 import { useVault } from "@/app/hooks/useVault";
 import { useAuth } from "@/app/contexts/auth-context";
@@ -41,6 +41,7 @@ const schema = z.object({
 });
 
 const HANDLE_TAKEN_MESSAGE = "This handle is already taken.";
+const HANDLE_CHECK_FAILED_MESSAGE = "Couldn’t check availability. Try again.";
 const normalizeHandle = (value: string) => value.trim().toLowerCase();
 const isValidHandleFormat = (value: string) =>
   schema.shape.handle.safeParse(value).success;
@@ -203,6 +204,7 @@ export default function HandleClaimForm({ onClaimed }: Props) {
             const isCheckingAvailability =
               isValidFormat && field.state.meta.isValidating;
             const isTaken = availabilityError === HANDLE_TAKEN_MESSAGE;
+            const didAvailabilityCheckFail = availabilityError === HANDLE_CHECK_FAILED_MESSAGE;
             const isAvailable =
               isValidFormat &&
               hasCheckedAvailability &&
@@ -271,6 +273,10 @@ export default function HandleClaimForm({ onClaimed }: Props) {
                     <span className="text-destructive">
                       @{value} is taken. Try something else.
                     </span>
+                  ) : didAvailabilityCheckFail ? (
+                    <span className="text-destructive">
+                      Couldn’t check @{value}. Try again.
+                    </span>
                   ) : isAvailable ? (
                     <span className="text-primary">
                       @{value} is yours. Lives at{" "}
@@ -305,6 +311,11 @@ export default function HandleClaimForm({ onClaimed }: Props) {
               }
 
               const exists = await handleExists(handle);
+
+              if (exists === null) {
+                return HANDLE_CHECK_FAILED_MESSAGE;
+              }
+
               availabilityCacheRef.current.set(handle, exists);
 
               return exists ? HANDLE_TAKEN_MESSAGE : undefined;

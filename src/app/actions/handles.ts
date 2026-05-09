@@ -48,9 +48,16 @@ export async function addHandle({
   }
 }
 
-export async function hadnleExists(handle: string) {
-  return Boolean((await getDb().select().from(handles).where(eq(handles.handle, handle))).length)
+export async function handleExists(handle: string) {
+  try {
+    return Boolean((await getDb().select().from(handles).where(eq(handles.handle, handle))).length)
+  } catch (error) {
+    console.error("Failed to check handle availability", error);
+    return null;
+  }
 }
+
+export const hadnleExists = handleExists;
 
 
 export async function getHandle(handle: string) {
