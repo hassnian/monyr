@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   ArrowUpRight,
+  Coins,
   ExternalLink,
   Eye,
   KeyRound,
@@ -44,6 +45,8 @@ type Step = {
   accent?: boolean;
 };
 
+const FAUCET_URL = "https://faucet.umbraprivacy.com/";
+
 const STEPS: Step[] = [
   {
     n: "01",
@@ -58,11 +61,23 @@ const STEPS: Step[] = [
   },
   {
     n: "02",
+    title: "Fund your wallet from the devnet faucet",
+    blurb:
+      "You&rsquo;ll need test SOL and devnet USDC before any payment can land — both come from one place.",
+    detail:
+      "Umbra&rsquo;s devnet faucet drops both SOL (for transaction fees) and USDC (the asset you&rsquo;ll send). Without these, the wallet sign step fails. The faucet is rate-limited but free — keep the tab open if you plan to run the flow more than once.",
+    cta: "Open faucet",
+    href: FAUCET_URL,
+    external: true,
+    icon: <Coins className="size-4" strokeWidth={2} />,
+  },
+  {
+    n: "03",
     title: "Pay privately",
     blurb:
-      "Pick an amount, sign with your wallet, watch the ZK proof generate locally.",
+      "Pick <strong>Private Pay</strong> (the mixer rail), sign with your wallet, watch the ZK proof generate locally.",
     detail:
-      "The payer&rsquo;s wallet pops, the worker generates a Groth16 proof in 2–8 seconds, the deposit lands in Umbra&rsquo;s mixer. Real Solana RPC, real USDC base units.",
+      "The payer&rsquo;s wallet pops, the worker generates a Groth16 proof in 2–8 seconds, and the deposit lands in Umbra&rsquo;s UTXO pool. Real Solana RPC, real USDC base units. Quick Pay — the public rail offered next to it — is a plain SPL transfer for users who want speed over privacy; choose Private Pay to see the mixer flow.",
     cta: "Simulate a payment",
     href: PROFILE_PATH,
     external: true,
@@ -70,7 +85,7 @@ const STEPS: Step[] = [
     accent: true,
   },
   {
-    n: "03",
+    n: "04",
     title: "View the dashboard",
     blurb: "Where Alice sees the payment arrive — decrypted in her browser only.",
     detail:
@@ -81,7 +96,7 @@ const STEPS: Step[] = [
     icon: <LayoutDashboard className="size-4" strokeWidth={2} />,
   },
   {
-    n: "04",
+    n: "05",
     title: "Check the public explorer",
     blurb: "Look up the same activity on Solscan. Notice what isn&rsquo;t there.",
     detail:
@@ -92,11 +107,11 @@ const STEPS: Step[] = [
     icon: <Eye className="size-4" strokeWidth={2} />,
   },
   {
-    n: "05",
+    n: "06",
     title: "Read the privacy model",
     blurb: "The brutally honest cut — what we hide, and what we don&rsquo;t.",
     detail:
-      "A six-by-six matrix of who can see what, six load-bearing invariants, and the one explicit leak (withdrawal). If something on this site reads softer than the code, that page is where to check.",
+      "A six-by-six matrix of who can see what, six load-bearing invariants, and the honest caveats around withdrawal. If something on this site reads softer than the code, that page is where to check.",
     cta: "Privacy model",
     href: PRIVACY_PATH,
     icon: <KeyRound className="size-4" strokeWidth={2} />,
@@ -142,7 +157,7 @@ function DemoHero() {
     >
       <p className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-raised/40 px-3 py-1 font-mono tabular text-[10.5px] uppercase tracking-[0.22em] text-muted-foreground/85 backdrop-blur-sm">
         <Sparkles className="size-3 text-primary" strokeWidth={2.25} />
-        § Demo · 60 seconds · five steps
+        § Demo · 90 seconds · six steps
       </p>
 
       <h1
@@ -229,13 +244,13 @@ function DemoSteps() {
             id="steps-headline"
             className="mt-5 font-serif text-3xl leading-[1.06] tracking-tight text-foreground sm:text-4xl md:text-[44px]"
           >
-            Five tabs.{" "}
+            Six tabs.{" "}
             <em className="not-italic text-primary">One honest demo.</em>
           </h2>
           <p className="mt-5 max-w-2xl font-serif text-[16.5px] italic leading-relaxed text-muted-foreground/85 md:text-[17.5px]">
             Each step is a click. Each click is a real surface — the same
             production routes a user would hit. Open them in order; the
-            picture lands by step five.
+            picture lands by step six.
           </p>
         </header>
 

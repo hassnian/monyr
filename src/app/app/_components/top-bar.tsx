@@ -17,7 +17,8 @@ type Props = {
 export function TopBar({ handle }: Props) {
   const pathname = usePathname() ?? "";
   const isDashboard = pathname === "/app";
-  const isReceipts = pathname.startsWith("/app/receipts");
+  // Receipts route is not yet shipped — re-enable when /app/receipts exists.
+  // const isReceipts = pathname.startsWith("/app/receipts");
   const isSettings = pathname.startsWith("/app/settings");
 
   return (
@@ -31,9 +32,9 @@ export function TopBar({ handle }: Props) {
               Dashboard
             </NavLink>
             <NavLink href={`/@${handle}`}>Profile</NavLink>
-            <NavLink href="/app/receipts" active={isReceipts}>
+            {/* <NavLink href="/app/receipts" active={isReceipts}>
               Receipts
-            </NavLink>
+            </NavLink> */}
             <NavLink href="/app/settings" active={isSettings}>
               Settings
             </NavLink>

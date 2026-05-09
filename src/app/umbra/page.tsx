@@ -28,7 +28,7 @@ export const metadata = {
 };
 
 const UMBRA_VERSIONS = {
-  sdk: "@umbra-privacy/sdk · v3.0.0",
+  sdk: "@umbra-privacy/sdk · v4.0.0",
   prover: "@umbra-privacy/web-zk-prover · v2.0.1",
   programMainnet: "UMBRAD2ishebJTcgCLkTkNUx1v3GyoAgpTRPeWoLykh",
   programDevnet: "DSuKkyqGVGgo4QtPABfxKJKygUDACbUhirnuv63mEpAJ",
@@ -204,7 +204,7 @@ const SDK_CALLS: SdkCall[] = [
     purpose: "One-time on-chain registration for a wallet.",
     status: "live",
     detail:
-      "Called with `{ confidential: true, anonymous: true }` so the same registration covers both encrypted balances and anonymous deposits. Idempotent: re-runs are no-ops once an account is fully initialised.",
+      "Called with `{ confidential: true, anonymous: true }` so the same registration covers both encrypted balances and anonymous deposits. Idempotent: re-runs are no-ops once an account is fully initialised. Wired into `Activate Private Payments` for recipients, and into the payer flow when a wallet hasn&rsquo;t yet registered with Umbra.",
   },
   {
     name: "getUserRegistrationProver",
@@ -212,7 +212,7 @@ const SDK_CALLS: SdkCall[] = [
     purpose: "Generate the Groth16 proof needed by registration.",
     status: "live",
     detail:
-      "ZK assets are loaded from Umbra&rsquo;s CDN, but proxied through `/api/umbra-zk` to sidestep CORS. The prover is intended to run inside a Web Worker (Comlink) — UI stays interactive while proving.",
+      "ZK assets are loaded from Umbra&rsquo;s CDN, but proxied through `/api/umbra-zk` to sidestep CORS. The prover runs inside a Web Worker so the UI stays interactive while proving.",
   },
   {
     name: "getCdnZkAssetProvider",
@@ -223,36 +223,68 @@ const SDK_CALLS: SdkCall[] = [
       "Pointed at our own `/api/umbra-zk/*` route handlers, which transparently proxy Umbra&rsquo;s CDN. Same bytes, same hashes — just origin-friendly so the prover can stream them without CORS errors.",
   },
   {
-    name: "getPublicBalanceToEncryptedBalanceDirectDepositorFunction",
+    name: "getEncryptedBalanceQuerierFunction",
     module: "@umbra-privacy/sdk",
-    purpose: "Move public USDC into an Umbra encrypted balance.",
-    status: "wired",
+    purpose: "Decrypt the vault&rsquo;s encrypted USDC balance for the dashboard.",
+    status: "live",
     detail:
-      "This is the deposit primitive currently wired into the dashboard. It encrypts the amount on entry into the user&rsquo;s ETA — a stepping stone to the receiver-claimable UTXO flow that will power public-profile payments.",
+      "Reads the on-chain ETA ciphertext and decrypts client-side with the master viewing key. The server never sees a dollar amount — every total on the dashboard is reconstituted in the browser.",
   },
   {
     name: "getPublicBalanceToReceiverClaimableUtxoCreatorFunction",
     module: "@umbra-privacy/sdk",
-    purpose: "The payer-flow primitive: deposit → mixer → receiver-claimable UTXO.",
-    status: "planned",
+    purpose: "Payer flow: deposit public USDC → mixer → receiver-claimable UTXO.",
+    status: "live",
     detail:
-      "The target call for `/@alice` payer-side flows. The payer&rsquo;s public USDC enters the unified mixer pool and produces a UTXO claimable only by Alice&rsquo;s vault — the step that breaks the sender↔recipient graph link.",
+      "The production primitive behind `/@alice` payments. The payer&rsquo;s public USDC enters Umbra&rsquo;s UTXO pool and produces a UTXO whose destination is AES-encrypted in the commitment — the on-chain create event reveals the payer and amount, but not the recipient vault. Called from `pay-confirmation-modal.tsx`.",
+  },
+  {
+    name: "getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction",
+    module: "@umbra-privacy/sdk",
+    purpose: "Vault-to-vault sends: encrypted balance → receiver-claimable UTXO.",
+    status: "live",
+    detail:
+      "Used when a Monyr user sends from their own vault to another `@handle`. The sender&rsquo;s vault is visible as the create-tx signer, but the amount (a homomorphic encrypted-balance debit) and the destination vault (AES-encrypted in the UTXO) are both opaque on-chain — so observers see &ldquo;vault X did a private send&rdquo;, not &ldquo;Alice paid Bob.&rdquo; Called from `send-privately-dialog.tsx`.",
+  },
+  {
+    name: "getClaimableUtxoScannerFunction",
+    module: "@umbra-privacy/sdk",
+    purpose: "Scan the UTXO tree and decrypt entries claimable by this user.",
+    status: "live",
+    detail:
+      "Runs on dashboard load via `useInboxPayments`, bounded to a recent window so the main thread doesn&rsquo;t freeze on a full-tree scan. Also runs inside the withdrawal flow to confirm a self-claimable UTXO is indexed before claiming it. No automatic background poll yet — claims are user-triggered from the inbox.",
   },
   {
     name: "getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction",
     module: "@umbra-privacy/sdk",
     purpose: "Recipient-side: claim incoming UTXOs into the encrypted balance, gas-free.",
-    status: "planned",
+    status: "live",
     detail:
-      "Submitted via the Umbra relayer so the recipient pays no SOL. Combined with `getClaimableUtxoScannerFunction`, this is the dashboard&rsquo;s background auto-claim loop.",
+      "Submitted via `getUmbraRelayer` so the recipient pays no SOL and the claim is signed by the relayer, not the vault — which is what unlinks the deposit and the credit on-chain. Wired into the inbox `Claim` action.",
   },
   {
-    name: "getClaimableUtxoScannerFunction",
+    name: "getEncryptedBalanceToSelfClaimableUtxoCreatorFunction",
     module: "@umbra-privacy/sdk",
-    purpose: "Iterate new claimable UTXOs since the last cursor.",
-    status: "planned",
+    purpose: "Withdrawal step 1: encrypted balance → self-claimable UTXO.",
+    status: "live",
     detail:
-      "Runs on `/app` load and on a poll. Cursor is cached in IndexedDB so the scanner only does incremental work between sessions.",
+      "The first leg of a private withdrawal. The vault signs an Arcium-backed flow that debits the encrypted balance and inserts a UTXO whose destination is AES-encrypted. Called from `withdraw-dialog.tsx`.",
+  },
+  {
+    name: "getSelfClaimableUtxoToPublicBalanceClaimerFunction",
+    module: "@umbra-privacy/sdk",
+    purpose: "Withdrawal step 2: relayer claims the UTXO into the destination&rsquo;s public token account.",
+    status: "live",
+    detail:
+      "Submitted via the relayer — the on-chain claim is signed by Umbra, not the vault, and credits the destination wallet&rsquo;s public USDC balance. There is no direct vault-to-wallet SPL transfer; the link between create and claim is hidden behind the mixer&rsquo;s anonymity set.",
+  },
+  {
+    name: "getUmbraRelayer",
+    module: "@umbra-privacy/sdk",
+    purpose: "Submit claim transactions on behalf of the user.",
+    status: "live",
+    detail:
+      "Used by both the inbox claim and the withdrawal claim leg. The relayer pays gas and signs the transaction; it sees the proof but never holds funds or sees the encrypted contents.",
   },
   {
     name: "getComplianceGrantIssuerFunction",
@@ -260,7 +292,7 @@ const SDK_CALLS: SdkCall[] = [
     purpose: "Issue a scoped, on-chain viewing grant to an accountant or auditor.",
     status: "planned",
     detail:
-      "Time-, mint-, or transaction-scoped. Grant holders decrypt amounts in the window without holding spend rights. Powers the &ldquo;hand my accountant Q1&rdquo; story.",
+      "Time-, mint-, or transaction-scoped. Grant holders decrypt amounts in the window without holding spend rights. The accountant story is documented; grant issuance and CSV/PDF export are not in the shipping build.",
   },
 ];
 
@@ -549,8 +581,8 @@ const REAL_NOW: RealItem[] = [
     note: "getUserRegistrationProver with CDN assets proxied through /api/umbra-zk. The proof your wallet signs is genuine.",
   },
   {
-    label: "Direct deposit into encrypted balance",
-    note: "getPublicBalanceToEncryptedBalanceDirectDepositorFunction. Amounts are real USDC base units (6 decimals); the encryption is Umbra&rsquo;s, not ours.",
+    label: "Live USDC payments via the receiver-claimable mixer flow",
+    note: "getPublicBalanceToReceiverClaimableUtxoCreatorFunction. Real USDC base units (6 decimals); the encryption is Umbra&rsquo;s, not ours. Wired into the /@alice payment flow.",
   },
   {
     label: "Two-wallet vault model",
@@ -560,12 +592,8 @@ const REAL_NOW: RealItem[] = [
 
 const SIMULATED: RealItem[] = [
   {
-    label: "Payer-side mixer flow on /@alice",
-    note: "The receiver-claimable UTXO creator is scoped but not yet the production payer path. Today, payments use the direct-deposit primitive; the mixer-routed primitive is the next milestone.",
-  },
-  {
-    label: "Auto-claim via relayer",
-    note: "getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction and the indexer scanner are not yet wired into the dashboard&rsquo;s background loop. Demo seeds are decrypted client-side from a fixture.",
+    label: "Background auto-claim poll",
+    note: "Inbound UTXOs are scanned on dashboard load and claimed via a user action from the inbox. There is no automatic background loop yet — claims wait for the recipient to open the app.",
   },
   {
     label: "Memo encryption with MVK",
@@ -713,31 +741,31 @@ const SETUP = [
     n: "01",
     title: "Main wallet signs the unlock message",
     detail:
-      "We sign HUSH_UNLOCK_MESSAGE_V1. The signature feeds HKDF, which produces an AES-256-GCM key. That key encrypts the freshly generated vault keypair before anything is sent to the server.",
+      "At handle claim, the main wallet signs HUSH_UNLOCK_MESSAGE_V1 once. The signature feeds HKDF, which produces an AES-256-GCM key. That key encrypts the freshly generated vault keypair before anything is sent to the server.",
   },
   {
     n: "02",
     title: "Vault keypair is generated in-browser",
     detail:
-      "A fresh Ed25519 keypair, never seen by the main wallet&rsquo;s seed. Its public key becomes the @handle&rsquo;s receiving address; its secret is encrypted at rest.",
+      "A fresh Ed25519 keypair, never seen by the main wallet&rsquo;s seed. Its public key becomes the @handle&rsquo;s receiving address; its secret is encrypted at rest. Steps 01 and 02 are the entirety of handle claim — one main-wallet signature, no Umbra interaction yet.",
   },
   {
     n: "03",
     title: "Vault signs UMBRA_MESSAGE_TO_SIGN",
     detail:
-      "The Master Viewing Key is derived from this signature, deterministically. Re-derivable on any device the user can decrypt the vault on.",
+      "Run later, when the user opens &ldquo;Activate Private Payments&rdquo; on the dashboard. The Master Viewing Key is derived from this signature, deterministically. Re-derivable on any device the user can decrypt the vault on.",
   },
   {
     n: "04",
     title: "Vault registers with Umbra",
     detail:
-      "getUserRegistrationFunction runs once. Registration gas is sponsored — the main wallet never sends SOL to the vault, so no on-chain edge links them.",
+      "Same activation step. getUserRegistrationFunction runs the on-chain registration (account init, X25519 key, anonymous-usage flag). Registration gas is sponsored — the main wallet never sends SOL to the vault, so no on-chain edge links them.",
   },
   {
     n: "05",
     title: "Payer-side registration (only first time)",
     detail:
-      "A first-time payer registers their own wallet too. Subsequent payments skip this step. We surface this clearly in the pay flow so it isn&rsquo;t a surprise.",
+      "A first-time payer registers their own wallet too, the first time they pay through Umbra. The pay flow checks via getUserAccountQuerierFunction and surfaces the prompt before the deposit so it isn&rsquo;t a surprise. Subsequent payments skip this step.",
   },
   {
     n: "06",
@@ -762,8 +790,11 @@ function SectionSetup() {
       standfirst={
         <>
           Every signature has a purpose. We don&rsquo;t batch surprise prompts.
-          The first run takes two signatures from the recipient, one from a
-          first-time payer; after that, it&rsquo;s frictionless.
+          Claiming a handle is one main-wallet signature. Activating private
+          receiving — a separate dashboard step — derives the Master Viewing
+          Key and runs the Umbra registration. First-time payers also register
+          once before their first private payment; after that, it&rsquo;s
+          frictionless.
         </>
       }
     >
@@ -810,9 +841,9 @@ const LIMITS = [
       "A wallet that has never used Umbra registers once before its first private payment. That&rsquo;s an extra signature for new payers. Subsequent payments don&rsquo;t pay this cost.",
   },
   {
-    title: "Withdrawal links the vault",
+    title: "Withdrawal privacy depends on the anonymity set",
     detail:
-      "Sending USDC out of the vault to a public wallet creates an on-chain edge between the two. The privacy model is honest about this — see /privacy-model § 04.",
+      "There is no direct vault-to-wallet edge — the create leg has an encrypted destination and the claim leg is relayer-signed. But the destination wallet&rsquo;s received amount and timing are public, and on devnet (or low-volume mainnet) the mixer&rsquo;s anonymity set is small, so timing+amount correlation can still re-identify a withdrawal. See /privacy-model § 04.",
   },
   {
     title: "Relayer dependency",

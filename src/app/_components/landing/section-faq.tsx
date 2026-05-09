@@ -14,9 +14,10 @@ const QUESTIONS: Q[] = [
     a: (
       <p>
         No. Your handle resolves to a separate keypair generated in your
-        browser at signup. Your main wallet only signs the unlock message. The
-        two never share a transaction. When you withdraw, the funds route
-        through Umbra’s mixer — exits stay private too.
+        browser at signup. Your main wallet only signs the unlock message — the
+        two never share a transaction. Withdrawals route through Umbra’s mixer,
+        so the chain doesn’t draw a line from your handle to your destination
+        wallet.
       </p>
     ),
   },

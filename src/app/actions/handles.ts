@@ -57,9 +57,6 @@ export async function handleExists(handle: string) {
   }
 }
 
-export const hadnleExists = handleExists;
-
-
 export async function getHandle(handle: string) {
   try {
     const values = await getDb().select({

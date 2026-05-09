@@ -1,7 +1,6 @@
 "use client";
 
 import { handleUrl } from "@/lib/brand";
-import { solanaPaymentConfig } from "@/lib/payments/solana-config";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -71,7 +70,7 @@ export function ClaimFlow() {
               <>
                 <StepTitle
                   title="Claim your handle."
-                  description="Pick a name, click claim. One signature sets everything up — no extra approvals, no gas."
+                  description="Pick a name, click claim. One signature, no gas — your handle is yours."
                 />
                 <div className="mt-6">
                   <HandleClaimForm
@@ -126,8 +125,8 @@ function ClaimHeader({ step }: { step: string }) {
         <em className="text-primary not-italic">your payment profile.</em>
       </h1>
       <p className="max-w-md text-[15px] leading-relaxed text-muted-foreground">
-        Claim it once, put it in your bio, get paid privately. Nobody sees
-        amounts, senders, or your wallet history.
+        Claim it once, put it in your bio, get paid privately. Your wallet
+        history, your balance, and your memos stay off the public ledger.
       </p>
 
       <div className="flex items-center gap-2">
@@ -226,8 +225,8 @@ function ClaimedView({ handle }: { handle: string }) {
       </h1>
 
       <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-        Your profile is ready. Paste the link anywhere and accept {solanaPaymentConfig.tokenSymbol}
-        privately — no wallet address required.
+        Your profile is ready. Paste the link anywhere — every payment lands in
+        your vault, no wallet address required.
       </p>
 
       <UrlShowcase handle={displayHandle} />

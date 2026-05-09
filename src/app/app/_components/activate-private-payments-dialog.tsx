@@ -362,8 +362,8 @@ function ValueProps() {
     <ul className="flex w-full flex-col gap-2.5">
       <ValueRow
         icon={<KeyRound className="size-3.5" strokeWidth={2.25} />}
-        title="One signature, that's it"
-        sub="Keys never leave your device"
+        title="Keys stay on your device"
+        sub="We never see your vault secret"
       />
       <ValueRow
         icon={<Lock className="size-3.5" strokeWidth={2.25} />}
@@ -372,8 +372,8 @@ function ValueProps() {
       />
       <ValueRow
         icon={<Clock3 className="size-3.5" strokeWidth={2.25} />}
-        title="About five seconds"
-        sub="Once you approve in your wallet"
+        title="About a minute"
+        sub="A few wallet approvals while we register your vault"
       />
     </ul>
   );

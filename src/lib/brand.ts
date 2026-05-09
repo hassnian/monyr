@@ -1,5 +1,5 @@
 export const APP_NAME = "Monyr";
-export const APP_DOMAIN = "monyr.xyz";
+export const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "monyr.xyz";
 
 export function appUrl(path = "") {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;

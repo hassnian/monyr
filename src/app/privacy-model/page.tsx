@@ -110,9 +110,9 @@ const HIDDEN: Item[] = [
       "Funds land inside Umbra's Encrypted Token Account. Amounts are encrypted on-chain. Only your viewing key decrypts them. Block explorers show ciphertext.",
   },
   {
-    label: "Sender ↔ recipient graph",
+    label: "Sender → recipient link (private rail)",
     detail:
-      "Deposits route through Umbra's mixer. Tx logs say “someone interacted with the Umbra program,” not “Bob paid Alice.” The link is broken in the anonymity set.",
+      "On the private rail, the destination vault is AES-encrypted in the UTXO commitment, and the recipient&rsquo;s claim is signed by Umbra&rsquo;s relayer rather than by anyone tied to their handle. The deposit and the credit are both visible on-chain, but the link between them is hidden behind the mixer&rsquo;s anonymity set.",
   },
   {
     label: "Memo / context",
@@ -143,6 +143,11 @@ const VISIBLE: Item[] = [
       "Block explorers show a transaction touched the Umbra program at the moment a payment happened. The fact that something private happened is itself public.",
   },
   {
+    label: "Quick Pay is a public rail",
+    detail:
+      "Profiles offer a Quick Pay option alongside Private Pay &mdash; a plain SPL transfer for users who want speed over privacy. When a payer chooses Quick Pay, the sender wallet, the recipient vault pubkey, and the amount are all visible on-chain. Private Pay routes through Umbra&rsquo;s mixer instead.",
+  },
+  {
     label: "The payer&rsquo;s wallet (if they choose)",
     detail:
       "Payers sign the deposit with their own wallet. If that wallet has its own public history, the &ldquo;deposit-to-Umbra&rdquo; tx is visible on it. We can&rsquo;t hide a payer&rsquo;s past from a payer&rsquo;s past.",
@@ -155,7 +160,7 @@ const VISIBLE: Item[] = [
   {
     label: "First-time setup signatures",
     detail:
-      "Onboarding requires two wallet signatures (unlock message + Umbra registration). Payers, the first time they pay through Umbra, also register once. Subsequent payments do not.",
+      "Claiming a handle takes one main-wallet signature &mdash; the message that derives your vault encryption key. Activating private receiving (a separate dashboard step) runs the Umbra registration: a vault signature for the Master Viewing Key plus the registration transactions. First-time payers also register their wallet once before their first private payment; subsequent payments do not.",
   },
   {
     label: "Approximate timing",
@@ -334,8 +339,8 @@ const ROWS: Row[] = [
     fact: "yes",
   },
   {
-    actor: "Your accountant (with grant)",
-    blurb: "Time-scoped viewing key you issue",
+    actor: "Your accountant (with grant) — planned",
+    blurb: "Time-scoped viewing key. Grant primitive is not yet in the shipped build.",
     amount: "yes",
     sender: "partial",
     memo: "yes",
@@ -569,18 +574,18 @@ function SectionLeak() {
     <SectionFrame
       id="leak"
       number="04"
-      eyebrow="The one leak"
+      eyebrow="The honest caveats"
       headline={
         <>
-          The exit door{" "}
-          <em className="not-italic text-primary">is the seam.</em>
+          Exits are mixer-routed.{" "}
+          <em className="not-italic text-primary">Their privacy isn&rsquo;t infinite.</em>
         </>
       }
       standfirst={
         <>
-          Every privacy system has a place where the design has to make a
-          choice. Ours is the moment you withdraw from your vault to a public
-          wallet.
+          Withdrawing funds doesn&rsquo;t draw a line from your handle to your
+          destination wallet &mdash; the chain never sees that transfer. But
+          three things still constrain how private an exit really is.
         </>
       }
     >
@@ -611,43 +616,71 @@ function SectionLeak() {
               Caution · withdrawal
             </p>
             <h3 className="mt-1.5 font-serif text-2xl leading-tight tracking-tight text-foreground md:text-[28px]">
-              Withdrawing to your main wallet undoes the privacy you just paid
-              for.
+              How withdrawal works &mdash; and where its privacy ends.
             </h3>
             <p className="mt-4 max-w-3xl text-[14.5px] leading-relaxed text-muted-foreground/85">
-              When funds leave your vault to a wallet that has a public history
-              &mdash; the everyday wallet you use for DEX trades or NFT buys
-              &mdash; that on-chain transaction publicly links the vault to
-              that wallet. Anyone who has your handle can now read the receiving
-              wallet&rsquo;s history.
+              A withdrawal is two transactions, neither of which is a direct
+              vault-to-wallet transfer. The vault signs a step that creates a
+              UTXO whose destination is AES-encrypted on-chain. The Umbra
+              relayer then signs a separate transaction that credits the
+              destination wallet&rsquo;s public balance. An on-chain observer
+              can&rsquo;t draw a line between the two without solving for the
+              mixer&rsquo;s anonymity set.
             </p>
 
             <ul className="mt-6 space-y-3 text-[13.5px] leading-relaxed text-muted-foreground/85">
               <li className="flex items-start gap-3">
                 <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary" />
                 <span>
-                  Default proposal in the UI: withdraw to a{" "}
-                  <em>fresh</em> address generated inline, with no history of
-                  its own.
+                  <strong className="font-medium text-foreground/90">
+                    Anonymity set.
+                  </strong>{" "}
+                  The mixer only mixes you with other Umbra users withdrawing
+                  in the same window. The create leg is timing-only &mdash; the
+                  amount stays inside the encrypted balance &mdash; but the
+                  claim leg has both timing and a public amount. On devnet
+                  today and on low-volume mainnet, that anonymity set is small,
+                  so an observer can still pair a recent vault-side create
+                  event with a public claim by timing alone, plus the
+                  claim&rsquo;s amount as a tiebreaker. Privacy here grows with
+                  the network, not with any single transaction.
                 </span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary" />
                 <span>
-                  Recommended pattern: keep funds inside the vault. Spend from
-                  it through Umbra-aware flows where possible. Withdraw only
-                  when you must move to fiat or a wallet outside Monyr.
+                  <strong className="font-medium text-foreground/90">
+                    The destination is public.
+                  </strong>{" "}
+                  Once funds land in a public wallet, the credit transaction
+                  &mdash; amount and timing &mdash; is visible on that
+                  wallet&rsquo;s history. Withdraw to an address already known
+                  to be yours, or move unique amounts on a predictable
+                  schedule, and observers can guess which mixer exit was yours.
                 </span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary" />
                 <span>
-                  If you insist on a public destination, a banner in the
-                  withdrawal flow names the trade-off in plain language. We do
-                  not bury it under a tooltip.
+                  <strong className="font-medium text-foreground/90">
+                    Server-side trust.
+                  </strong>{" "}
+                  The handle-to-vault mapping lives in the Monyr database, and
+                  encrypted receipt metadata is stored server-side. The mixer
+                  doesn&rsquo;t protect against a Monyr-server adversary or a
+                  subpoena &mdash; for that, the defenses are the
+                  encrypted-vault model and the absence of unencrypted memos.
                 </span>
               </li>
             </ul>
+
+            <p className="mt-6 max-w-3xl font-serif text-[13.5px] italic leading-relaxed text-muted-foreground/75">
+              Practical pattern: keep funds inside the vault and spend through
+              Umbra-aware flows where possible. Withdraw only when you must
+              move to fiat or to a wallet outside Monyr &mdash; and prefer a
+              destination that doesn&rsquo;t already have a public history
+              tied to you.
+            </p>
           </div>
         </div>
       </div>
