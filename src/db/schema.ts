@@ -116,6 +116,20 @@ export const productPurchases = pgTable(
   ],
 );
 
+export const outboxReceipts = pgTable(
+  "outbox_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    owner_handle_id: uuid("owner_handle_id")
+      .notNull()
+      .references(() => handles.id, { onDelete: "cascade" }),
+    encrypted_payload: text("encrypted_payload").notNull(),
+    encrypted_payload_version: integer("encrypted_payload_version").notNull().default(1),
+    created_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [index("outbox_receipts_owner_handle_id_idx").on(table.owner_handle_id)],
+);
+
 export const paymentMetadata = pgTable(
   "payment_metadata",
   {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createSignerFromKeyPair as createUmbraSignerFromKeyPair } from "@umbra-privacy/sdk";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AtSign,
   Check,
@@ -32,6 +33,7 @@ import { AmountDisplay } from "@/components/payments/amount-display";
 import { AmountInput } from "@/components/payments/amount-input";
 import { HandleText } from "@/components/payments/handle-text";
 import { getHandle } from "@/app/actions/handles";
+import { recordOutboxReceipt } from "@/app/actions/outbox-receipts";
 import { recordPaymentMetadata } from "@/app/actions/payment-metadata";
 import { fundVaultForUtxoCreation } from "@/app/actions/vault";
 import { useAuth } from "@/app/contexts/auth-context";
@@ -94,7 +96,8 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [amount]);
 
-  const { unlockedVault } = useAuth();
+  const queryClient = useQueryClient();
+  const { user, unlockedVault } = useAuth();
   const { createPrivateReceiverClaimableUtxo } = useUmbra();
   const {
     balance: privateBalance,
@@ -186,6 +189,34 @@ export function SendPrivatelyDialog({ open, onOpenChange }: Props) {
       }).catch((error) => {
         console.error("Failed to save payment metadata", error);
       });
+
+      if (user) {
+        const senderPayload = await encryptReceiptPayload(
+          unlockedVault.receiptEncryptionPublicKey,
+          {
+            version: 1,
+            recipient: `@${target.handle}`,
+            recipientKind: "handle",
+            amountBaseUnits: nativeAmount(
+              numericAmount,
+              solanaPaymentConfig.tokenDecimals,
+            ).toString(),
+            tokenDecimals: solanaPaymentConfig.tokenDecimals,
+            mint: solanaPaymentConfig.tokenMint,
+            memo: memo.trim() || undefined,
+            utxoCreateSignature,
+            createdAt: new Date().toISOString(),
+          },
+        );
+
+        await recordOutboxReceipt({
+          ownerHandle: user.handle,
+          encryptedPayload: JSON.stringify(senderPayload),
+        }).catch((error) => {
+          console.error("Failed to save outbox receipt", error);
+        });
+        await queryClient.invalidateQueries({ queryKey: ["outbox"] });
+      }
 
       void refetchPrivateBalance();
       setPhase("done");
