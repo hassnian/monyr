@@ -592,20 +592,16 @@ const REAL_NOW: RealItem[] = [
 
 const SIMULATED: RealItem[] = [
   {
-    label: "Background auto-claim poll",
-    note: "Inbound UTXOs are scanned on dashboard load and claimed via a user action from the inbox. There is no automatic background loop yet — claims wait for the recipient to open the app.",
+    label: "Claims are user-triggered, not automatic",
+    note: "The dashboard scans for claimable UTXOs on mount (and on the 60s stale window), but the claim itself only runs when the recipient presses &ldquo;Claim&rdquo; in the inbox. There is no background loop, no on-detect auto-claim, no push channel — so a recipient who never opens Monyr never settles. Once claimed, the relayer carries the tx gas-free.",
   },
   {
-    label: "Memo encryption with MVK",
-    note: "The hierarchy is designed; the live build still treats memos as cleartext on the dashboard. The DB schema reserves space for memo_ciphertext; the encryption hop is on the next sprint.",
+    label: "Memo encryption is vault-keyed, not MVK-derived",
+    note: "Memos travel encrypted end-to-end inside the receipt payload, decrypted client-side with the vault&rsquo;s receipt-encryption keypair — the server never sees them. But the key is a separate vault-derived secret, not the MVK-rooted hierarchy described in Umbra&rsquo;s docs. Functionally private; not yet the canonical key derivation.",
   },
   {
-    label: "Receipts &amp; viewing grants",
-    note: "CSV/PDF export and the on-chain compliance-grant flow (getComplianceGrantIssuerFunction) are not in the shipped build. The accountant story is documented; the wiring is not.",
-  },
-  {
-    label: "Sub-handle dashboard tabs",
-    note: "Sub-handle creation works; per-sub-handle filtering in the dashboard inbox is partial. The data model (sub_handles.kind enum) is correct; the UI tabs are stubbed.",
+    label: "Compliance / accountant viewing grants",
+    note: "getComplianceGrantIssuerFunction is scoped but not wired. The accountant story — time-, mint-, or transaction-scoped read grants, plus CSV/PDF export — is documented in /privacy-model; the on-chain issuance and the export UI are not in the shipping build.",
   },
 ];
 

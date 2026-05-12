@@ -28,15 +28,16 @@ const PATHS: Path[] = [
     blurb: "Locked amount, optional expiry. Marks itself paid.",
   },
   {
-    url: appUrl("@alice/c/f9xm8a2q"),
-    highlight: "/c/f9xm8a2q",
-    kind: "One-off send",
-    blurb: "Send to a stranger. The link carries the secret.",
+    url: appUrl("@alice/product/mini-zine"),
+    highlight: "/product/mini-zine",
+    kind: "Product",
+    blurb: "Fixed price, gated unlock. Downloads, licenses, or access passes.",
   },
 ];
 
 /**
- * "What it is" — one URL, four shapes. Same vault behind every path.
+ * "What it is" — one URL, four shapes (tip jar, per-client label, invoice,
+ * product). Same vault behind every path.
  */
 export function SectionWhat() {
   return (
@@ -53,7 +54,7 @@ export function SectionWhat() {
       }
       standfirst={
         <>
-          Tip jar, per-client label, invoice, one-off send. The path after your
+          Tip jar, per-client label, invoice, product. The path after your
           handle is just metadata — every variant lands in the same private
           vault.
         </>
