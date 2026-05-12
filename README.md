@@ -58,18 +58,30 @@ Then visit `http://localhost:3000`. On devnet, both test SOL and devnet USDC com
 
 ### Required env
 
+#### Server-only secrets
+
+Never prefix these with `NEXT_PUBLIC_`; they must not be exposed to the browser.
+
 | Var | What it is |
 |---|---|
-| `DATABASE_URL` | Postgres connection string |
-| `AUTH_SESSION_SECRET` | Server-side session signing secret |
-| `OWNER_WALLET_LOOKUP_SECRET` | Server-side hashing key for handle→owner lookups |
-| `SOLANA_RPC_URL` / `SOLANA_WS_URL` | Server-side Solana endpoints |
-| `SOLANA_SECRET_KEY_BASE58` | Sponsor account secret key, base58-encoded (used to fund vaults for Umbra activation) |
-| `NEXT_PUBLIC_APP_DOMAIN` | Public domain (defaults to `monyr.xyz`) |
-| `NEXT_PUBLIC_SOLANA_CHAIN` | `solana:devnet` or `solana:mainnet-beta` |
-| `NEXT_PUBLIC_SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_WS_URL` | Browser-side Solana endpoints |
-| `NEXT_PUBLIC_PAYMENT_TOKEN_MINT` | USDC mint for the active chain |
-| `NEXT_PUBLIC_PAYMENT_TOKEN_DECIMALS` / `_NAME` / `_SYMBOL` | Token display metadata |
+| `DATABASE_URL` | Postgres connection string used by Drizzle. |
+| `AUTH_SESSION_SECRET` | High-entropy secret for signing wallet sessions. Generate with `openssl rand -base64 32`. |
+| `OWNER_WALLET_LOOKUP_SECRET` | High-entropy pepper for hashing owner-wallet lookups. Generate with `openssl rand -base64 32`. |
+| `SOLANA_RPC_URL` / `SOLANA_WS_URL` | Server-side Solana RPC + WebSocket endpoints used by sponsor/funding actions. |
+| `SOLANA_SECRET_KEY_BASE58` | Base58-encoded Solana keypair secret for the sponsor wallet. Used to fund vaults for Umbra activation/UTXO setup. Keep funded with devnet SOL; never expose client-side. |
+
+#### Public browser config
+
+These are safe to expose and are read by the client bundle.
+
+| Var | What it is |
+|---|---|
+| `NEXT_PUBLIC_APP_DOMAIN` | Public domain used in profile URLs. Defaults to `monyr.xyz`. |
+| `NEXT_PUBLIC_SOLANA_CHAIN` | `solana:devnet` or `solana:mainnet-beta`. |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_WS_URL` | Browser-side Solana RPC + WebSocket endpoints. |
+| `NEXT_PUBLIC_PAYMENT_TOKEN_MINT` | Payment token mint for the active chain. Devnet defaults to dUSDC; mainnet defaults to USDC. |
+| `NEXT_PUBLIC_PAYMENT_TOKEN_DECIMALS` | Token decimals. Usually `6` for USDC/dUSDC. |
+| `NEXT_PUBLIC_PAYMENT_TOKEN_NAME` / `NEXT_PUBLIC_PAYMENT_TOKEN_SYMBOL` | Token display metadata, e.g. `Dummy USDC` / `dUSDC`. |
 
 ## Project layout
 
